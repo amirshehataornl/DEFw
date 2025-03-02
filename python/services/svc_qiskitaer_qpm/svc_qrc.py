@@ -40,7 +40,7 @@ class QRC:
 	THREAD_STATE_BUSY = 1
 
 	def __init__(self, start=True):
-		logging.debug(f"NWQSIM_QRC INIT")
+		logging.debug(f"QISKITAER_QRC INIT")
 		self.circuit_results_lock = threading.Lock()
 		self.worker_pool_lock = threading.Lock()
 		self.circuit_results = []
@@ -61,7 +61,7 @@ class QRC:
 					runner.start()
 
 	def __del__(self):
-		logging.debug(f"NWQSIM_QRC DEL")
+		logging.debug(f"QISKITAER_QRC DEL")
 		common.qpm_shutdown = True
 		with self.worker_pool_lock:
 			for k, v in self.worker_pool.items():
@@ -82,30 +82,23 @@ class QRC:
 
 	def parse_result(self, out):
 		try:
+			logging.debug(f"parse_result out = {out}")
 			out_str = out.decode("utf-8")
+			logging.debug(f"parse_result out_str = {out_str}")
 			if out_str == "":
 				raise DEFwError({"Error": "Empty output!"})
-				return {"Error": "Empty output!"}
-			logging.debug(f"parse_result out_str = {out_str}")
-			lines = out_str.split("\n")
-			catch = -1
-			for i, each_line in enumerate(lines):
-				if "===============  Measurement" in each_line:
-					catch = i
-			if catch == -1:
-				raise DEFwError({"Error": "Could not parse result!"})
-				return {"Error": "Could not parse result!"}
-			results = lines[catch+1:-1]
-			counts = {}
-			for each_res_line in results:
-				k,v = each_res_line.split(":")
-				k = k.strip('" ').strip()
-				v = int(v)
-				counts[k] = v
-			return counts
+			try:
+				counts = {}
+				for line in out_str.split('\n'):
+					if "counts" in line:
+						c = line.split("=")[1]
+						logging.debug(f"parse_result c = {c}")
+						counts = yaml.safe_load(c)
+						return counts
+			except Exception as e:
+				raise DEFwError({"Error": f"Failed to parse output: {e}"})
 		except Exception as e:
-			raise DEFwError({"Error": str(e)})
-			return {"Error": str(e)}
+			raise DEFwError({"Error": f"Failed to decode output: {e}"})
 
 	def check_active_tasks(self, wid):
 		complete = []
@@ -278,11 +271,11 @@ class QRC:
 		import shutil
 		info = circ.info
 
-		nwqsim_executable = shutil.which(info['qfw_backend'])
+		qiskitaer_executable = shutil.which(info['qfw_backend'])
 		gpuwrapper = shutil.which("gpuwrapper.sh")
 
-		if not nwqsim_executable or not gpuwrapper:
-			raise DEFwExecutionError("Couldn't find nwqsim_executable or gpuwrapper. Check paths")
+		if not qiskitaer_executable or not gpuwrapper:
+			raise DEFwExecutionError("Couldn't find qiskitaer_executable or gpuwrapper. Check paths")
 
 		if not os.path.exists(info["qfw_dvm_uri_path"].split('file:')[1]):
 			raise DEFwExecutionError(f"dvm-uri {info['qfw_dvm_uri_path']} doesn't exist")
@@ -302,40 +295,25 @@ class QRC:
 		exec_cmd = shutil.which(info["exec"])
 		#exec_cmd = info["exec"]
 
-		# Usage: ./nwq_qasm [options]
-		# Option              Description
-		# -q                  Executes a simulation with the given QASM file.
-		# -qs                 Executes a simulation with the given QASM string.
-		# -j                  Executes a simulation with the given json file with Qiskit Experiment Qobj.
-		# -js                 Executes a simulation with the given json string.
-		# -t <index>          Runs the testing benchmarks for the specific index provided.
-		# -a                  Runs all testing benchmarks.
-		# -backend_list       Lists all the available backends.
-		# -metrics            Print the metrics of the circuit.
-		# -backend <name>     Sets the backend for your program to the specified one (default: CPU). The backend name string is case-insensitive.
-		# -shots <value>      Configures the total number of shots (default: 1024).
-		# -sim <method>       Select the simulation method: sv (state vector, default), dm (density matrix). (default: sv).
-		# -basis              Run the transpiled benchmark circuits which only contain basis gates.
-
 		# cmd = f'{exec_cmd} --dvm {dvm} -x LD_LIBRARY_PATH ' \
 		# 	  f'--mca btl ^tcp,ofi,vader,openib ' \
 		# 	  f'--mca pml ^ucx --mca mtl ofi --mca opal_common_ofi_provider_include '\
 		# 	  f'{info["provider"]} --map-by {info["mapping"]} --bind-to core '\
-		# 	  f'--np {info["np"]} --host {hosts} {gpuwrapper} -v {nwqsim_executable} ' \
+		# 	  f'--np {info["np"]} --host {hosts} {gpuwrapper} -v {qiskitaer_executable} ' \
 		# 	  f'-q {qasm_file} '
 
 		# cmd = f'{exec_cmd} --dvm {dvm} -x LD_LIBRARY_PATH ' \
 		# 	  f'--mca btl ^tcp,ofi,vader,openib ' \
 		# 	  f'--mca pml ^ucx --mca mtl ofi --mca opal_common_ofi_provider_include '\
 		# 	  f'{info["provider"]} --map-by {info["mapping"]} --bind-to core '\
-		# 	  f'--np {info["np"]} --host {hosts} -v {nwqsim_executable} ' \
+		# 	  f'--np {info["np"]} --host {hosts} -v {qiskitaer_executable} ' \
 		# 	  f'-q {qasm_file} '
 
 		cmd = f'{exec_cmd} --dvm {dvm} -x LD_LIBRARY_PATH ' \
 			  f'--mca btl ^tcp,ofi,vader,openib ' \
 			  f'--mca pml ^ucx --mca mtl ofi --mca opal_common_ofi_provider_include '\
 			  f'{info["provider"]} --bind-to core '\
-			  f'--np {info["np"]} --host {hosts} -v {nwqsim_executable} ' \
+			  f'--np {info["np"]} --host {hosts} -v {qiskitaer_executable} ' \
 			  f'-q {qasm_file} '
 
 		# cmd = f'{exec_cmd} --dvm {dvm} -x LD_LIBRARY_PATH ' \
@@ -347,24 +325,33 @@ class QRC:
 		# 	f'--mca opal_common_ofi_provider_include {info["provider"]} ' \
 		# 	f'--map-by {info["mapping"]} --bind-to core ' \
 		# 	f'--np {info["np"]} --host {hosts} ' \
-		# 	f'-v {nwqsim_executable} -q {qasm_file} '
+		# 	f'-v {qiskitaer_executable} -q {qasm_file} '
 
 		if "num_shots" in info:
-			cmd += f' -shots {info["num_shots"]} '
+			cmd += f' -s {info["num_shots"]} '
 
-		if "qpm_options" in info and "backend" in info["qpm_options"]:
-			if info["qpm_options"]["backend"] in ["CPU", "OpenMP", "MPI", "AMDGPU"]:
-				cmd += f'-backend {info["qpm_options"]["backend"]} '
+		if "qpm_options" in info:
+			qpm_options = info["qpm_options"]
+			if "backend" in qpm_options:
+				if qpm_options["backend"] in ["automatic", "statevector", "density_matrix", "stabilizer", "matrix_product_state", "extended_stabilizer", "unitary", "superop", "tensor_network"]:
+					cmd += f'-b {qpm_options["backend"]} '
+				else:
+					logging.debug("Incorrect backend specified. Using default statevector")
+					cmd += f'-b statevector '
 			else:
-				logging.debug("Incorrect backend specified in qpm_options. Using default MPI")
-				cmd += f'-backend MPI '
-		else:
-			cmd += f'-backend MPI '
+				cmd += f'-b statevector '
 
-		if "method" in info:
-			cmd += f' -sim {info["method"]}'
+			if "device" in qpm_options:
+				device = qpm_options["device"]
+				if device in ["CPU", "GPU"]:
+					cmd += f'-d {device} '
+				else:
+					logging.debug("Incorrect device specified. Using default CPU")
+					cmd += f'-d CPU '
+			else:
+				cmd += f'-d CPU '
 
-		logging.debug(f"NWQSim CMD - {cmd}")
+		logging.debug(f"QiskitAer CMD - {cmd}")
 
 		return cmd
 
@@ -389,7 +376,7 @@ class QRC:
 
 		circ.set_launching()
 		launcher = svc_launcher.Launcher()
-		logging.debug(f"Running Circuit NWQSIM --\n{qasm_c}")
+		logging.debug(f"Running Circuit QiskitAer --\n{qasm_c}")
 		try:
 			cmd = self.form_cmd(circ, qasm_file)
 
@@ -410,7 +397,7 @@ class QRC:
 		task_info['launcher'] = launcher
 		task_info['pid'] = pid
 
-		logging.debug(f"NWQSIM task info - {task_info}")
+		logging.debug(f"QISKITAER task info - {task_info}")
 
 		return task_info
 
@@ -485,7 +472,7 @@ class QRC:
 			for k, v in self.worker_pool.items():
 				if v['state'] == QRC.THREAD_STATE_FREE and v['queue'].qsize() < QRC.MAX_NUM_WORKER_TASKS:
 					v['queue'].put(circ)
-					logging.debug(f"nwqsimqrc async_run v['queue'].qsize() = {v['queue'].qsize()}")
+					logging.debug(f"qiskitaerqrc async_run v['queue'].qsize() = {v['queue'].qsize()}")
 					if v['queue'].qsize() >= QRC.MAX_NUM_WORKER_TASKS:
 						v['state'] = QRC.THREAD_STATE_BUSY
 					return cid
@@ -493,10 +480,10 @@ class QRC:
 		# request. Raise an exception and the circuit will be queued
 		raise DEFwOutOfResources(f"No more resource to run {cid}")
 
-		logging.debug(f"nwqsimqrc async_run 3")
+		logging.debug(f"qiskitaerqrc async_run 3")
 
 	def shutdown(self):
 		common.qpm_shutdown = True
 
 	def test(self):
-		return "****Testing the NWQSIM QRC****"
+		return "****Testing the QISKIT-AER QRC****"
