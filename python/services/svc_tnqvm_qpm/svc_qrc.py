@@ -235,10 +235,10 @@ class QRC:
 
 		logging.debug(f"Circuit Info = {info}")
 
-		if 'compiler' not in info:
+		if 'qpm_options' not in info or 'compiler' not in info["qpm_options"]:
 			compiler = 'staq'
 		else:
-			compiler = info['compiler']
+			compiler = info["qpm_options"]["compiler"]
 
 		circuit_runner = shutil.which(info['qfw_backend'])
 		gpuwrapper = shutil.which("gpuwrapper.sh")

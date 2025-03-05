@@ -1,0 +1,15 @@
+cscope*
+.sconsign.dblite
+src/*.so
+src/*.o
+src/defwp
+src/defwd
+
+**/__pycache__/
+
+src/cdefw_agent.py
+src/cdefw_global.py
+src/defw_agent_wrap.c
+src/defw_global_wrap.c
+src/defw_agent.i
+src/defw_global.i
