@@ -40,6 +40,7 @@ export DEFW_AGENT_TYPE=agent
 export DEFW_SHELL_TYPE=daemon
 export DEFW_LOG_DIR=/tmp/${DEFW_AGENT_NAME}
 export DEFW_PARENT_HOSTNAME=$r_VALUE
+export DEFW_PREF_PATH=/ccs/home/shehataa/tmp
 
 export FI_LNX_PROV_LINKS=$lnx_cfg
 export FI_LNX_DISABLE_SHM=0

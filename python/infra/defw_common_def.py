@@ -3,11 +3,11 @@ from defw_exception import DEFwError, DEFwDumper, DEFwNotFound
 import logging, os, yaml, shutil, threading, time, sys
 from collections import deque
 
-DEFW_STATUS_STRING = 'IFW STATUS: '
+DEFW_STATUS_STRING = 'DEFw STATUS: '
 DEFW_STATUS_SUCCESS = 'Success'
 DEFW_STATUS_FAILURE = 'Failure'
 DEFW_STATUS_IGNORE = 'Ignore'
-DEFW_CODE_STRING = 'IFW CODE: '
+DEFW_CODE_STRING = 'DEFw CODE: '
 MASTER_PORT = 8494
 MASTER_DAEMON_PORT = 8495
 AGENT_DAEMON_PORT = 8094
@@ -222,7 +222,7 @@ def set_script_remote_cp(enable):
 	global_pref['remote copy'] = enable
 	save_pref()
 
-def set_logging_level(level):
+def set_logging_level(level, save=True):
 	'''
 	Set Python log level. One of: critical, debug, error, fatal
 	'''
@@ -231,10 +231,12 @@ def set_logging_level(level):
 	try:
 		log_level = getattr(logging, level.upper())
 		logging.getLogger('').setLevel(log_level)
-		global_pref['loglevel'] = level
+		if save:
+			global_pref['loglevel'] = level
 	except:
 		logging.critical("Log level must be one of: critical, debug, error, fatal")
-	save_pref()
+	if save:
+		save_pref()
 
 def set_cmd_verbosity(value):
 	'''
@@ -257,7 +259,7 @@ def is_cmd_verbosity():
 
 def load_pref():
 	'''
-	Load the IFW preferences.
+	Load the DEFw preferences.
 		editor - the editor of choice to use for editing scripts
 		halt_on_exception - True to throw an exception on first error
 				    False to continue running scripts
@@ -266,7 +268,10 @@ def load_pref():
 	global GLOBAL_PREF_DEF
 	global global_pref
 
-	global_pref_file = os.path.join(cdefw_global.get_defw_tmp_dir(), 'defw_pref.yaml')
+	try:
+		global_pref_file = os.path.join(os.environ['DEFW_PREF_PATH'], 'defw_pref.yaml')
+	except:
+		global_pref_file = os.path.join(cdefw_global.get_defw_tmp_dir(), 'defw_pref.yaml')
 
 	if os.path.isfile(global_pref_file):
 		with open(global_pref_file, 'r') as f:
@@ -284,7 +289,7 @@ def load_pref():
 
 def save_pref():
 	'''
-	Save the IFW preferences.
+	Save the DEFw preferences.
 		editor - the editor of choice to use for editing scripts
 		halt_on_exception - True to throw an exception on first error
 				    False to continue running scripts
@@ -292,9 +297,17 @@ def save_pref():
 	'''
 	global global_pref
 
-	global_pref_file = os.path.join(cdefw_global.get_defw_tmp_dir(), 'defw_pref.yaml')
+	try:
+		global_pref_file = os.path.join(os.environ['DEFW_PREF_PATH'], 'defw_pref.yaml')
+	except:
+		global_pref_file = os.path.join(cdefw_global.get_defw_tmp_dir(), 'defw_pref.yaml')
+
 	with open(global_pref_file, 'w') as f:
 		f.write(yaml.dump(global_pref, Dumper=DEFwDumper, indent=2, sort_keys=False))
+
+	with open(global_pref_file, 'r') as f:
+		p = yaml.load(f, Loader=yaml.FullLoader)
+		set_logging_level(p['loglevel'], save=False)
 
 def dump_pref():
 	global global_pref
