@@ -1421,7 +1421,7 @@ if not cdefw_global.get_defw_initialized():
 
 	preferences = load_pref()
 	# set debug level
-	#set_logging_level('debug')
+	set_logging_level('debug')
 
 	updater_thread = threading.Thread(target=updater_thread, args=())
 	updater_thread.daemon = True

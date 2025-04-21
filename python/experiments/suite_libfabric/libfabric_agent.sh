@@ -4,6 +4,7 @@
 r_VALUE=""
 p_VALUE=""
 b_VALUE=""
+lnx_cfg="shm+cxi:cxi0|shm+cxi:cxi1|shm+cxi:cxi2|shm+cxi:cxi3"
 
 if [[ $# -ne 6 ]]; then
   echo "Error: Exactly three parameters (-b, -p and -r) are required."
@@ -13,12 +14,13 @@ fi
 
 
 # Parse command-line arguments
-while getopts "b:r:p:" opt; do
+while getopts "b:r:p:l:" opt; do
   case ${opt} in
     r ) r_VALUE=$OPTARG ;;
     p ) p_VALUE=$OPTARG ;;
     b ) b_VALUE=$OPTARG ;;
-    * ) echo "Usage: $0 -p <script>"; exit 1 ;;
+    l ) lnx_cfg=$OPTARG ;;
+    * ) echo "Usage: $0 -r <parent hostname> -b <base port> -l <links> -p <script>"; exit 1 ;;
   esac
 done
 
@@ -39,10 +41,7 @@ export DEFW_SHELL_TYPE=daemon
 export DEFW_LOG_DIR=/tmp/${DEFW_AGENT_NAME}
 export DEFW_PARENT_HOSTNAME=$r_VALUE
 
-#export FI_LNX_PROV_LINKS="shm+cxi:cxi0|shm+cxi:cxi1|shm+cxi:cxi2|shm+cxi:cxi3"
-export FI_LNX_PROV_LINKS="shm+cxi"
-#export FI_LOG_LEVEL=warn
-#export FI_HOOK=trace
+export FI_LNX_PROV_LINKS=$lnx_cfg
 export FI_LNX_DISABLE_SHM=0
 export FI_CXI_RDZV_THRESHOLD=16384
 export FI_CXI_RDZV_EAGER_SIZE=2048
@@ -67,4 +66,6 @@ set -xe
 #fi_info -p lnx
 #env | grep -i vni
 #/bin/rm -Rf /tmp/libfabric*
+#python3 --version
+#echo $LD_LIBRARY_PATH
 python3 $p_VALUE 2>&1 | tee /tmp/test_out_$$

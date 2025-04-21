@@ -1,6 +1,6 @@
 from inspect import *
 import traceback
-import yaml
+import yaml, sys
 import cdefw_global
 
 class DEFwDumper(yaml.Dumper):
