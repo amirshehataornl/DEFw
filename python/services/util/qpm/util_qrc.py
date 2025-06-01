@@ -16,7 +16,7 @@ class UTIL_QRC:
 	THREAD_STATE_BUSY = 1
 
 	def __init__(self, num_workers=8, num_worker_tasks=256, start=True):
-		print_thread_stack_trace_to_logger(level='critical')
+		print_thread_stack_trace_to_logger(level='debug')
 		self.shutdown_workers = False
 		self.circuit_results_lock = threading.Lock()
 		self.worker_pool_lock = threading.Lock()

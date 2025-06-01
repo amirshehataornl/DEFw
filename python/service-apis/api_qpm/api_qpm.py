@@ -9,6 +9,7 @@ class QPMType(IntFlag):
 	QPM_TYPE_QB = 1 << 2
 	QPM_TYPE_TNQVM = 1 << 3
 	QPM_TYPE_NWQSIM = 1 << 4
+	QPM_TYPE_QISKITAER = 1 << 5
 
 class QPMCapability(IntFlag):
 	QPM_CAP_TENSORNETWORK = 1 << 0

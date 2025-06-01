@@ -2,6 +2,7 @@ from inspect import *
 import traceback
 import yaml, sys
 import cdefw_global
+import sys
 
 class DEFwDumper(yaml.Dumper):
 	def increase_indent(self, flow=False, indentless=False):
