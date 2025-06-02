@@ -1372,11 +1372,9 @@ if not cdefw_global.get_defw_initialized():
 
 	defw_cfg = configure_defw()
 
-	py_log_path = cdefw_global.get_defw_tmp_dir()
-	Path(py_log_path).mkdir(parents=True, exist_ok=True)
-	printformat = "[%(asctime)s:%(filename)s:%(lineno)s:%(funcName)s():Thread-%(thread)d]-> %(message)s"
-	logging.basicConfig(filename=os.path.join(py_log_path, "defw_py.log"),
-				filemode='w', format=printformat)
+	setup_log_file()
+	setup_log_levels()
+
 	setup_paths()
 
 	# All test results are stored in here
