@@ -74,7 +74,7 @@ class QRC(UTIL_QRC):
 		if "backend" in info:
 			cmd += f'-backend {info["backend"]} '
 		else:
-			cmd += f'-backend MPI '
+			cmd += f'-backend OPENMP'
 
 		if "method" in info:
 			cmd += f' -sim {info["method"]}'
