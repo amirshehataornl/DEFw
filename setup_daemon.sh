@@ -1,4 +1,4 @@
-export DEFW_PATH=/sw/frontier/qhpc/QFw/DEFw/
+export DEFW_PATH=/lustre/orion/gen008/proj-shared/qhpc/srikar/qfw_related/QFw/DEFw/
 export DEFW_CONFIG_PATH=$DEFW_PATH/python/config/defw_generic.yaml
 export LD_LIBRARY_PATH=$DEFW_PATH/src/
 export DEFW_AGENT_NAME=testd

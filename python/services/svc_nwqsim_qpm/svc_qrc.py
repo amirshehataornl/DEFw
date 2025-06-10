@@ -64,15 +64,19 @@ class QRC(UTIL_QRC):
 		cmd = f'{exec_cmd} --dvm {dvm} -x LD_LIBRARY_PATH ' \
 			  f'--mca btl ^tcp,ofi,vader,openib ' \
 			  f'--mca pml ^ucx --mca mtl ofi --mca opal_common_ofi_provider_include '\
-			  f'{info["provider"]} --bind-to core '\
-			  f'--np {info["np"]} --host {hosts} -v {nwqsim_executable} ' \
+			  f'{info["provider"]} --map-by {info["mapping"]} --bind-to core '\
+			  f'--np {info["np"]} --host {hosts} {gpuwrapper} -v {nwqsim_executable} ' \
 			  f'-q {qasm_file} '
 
 		if "num_shots" in info:
 			cmd += f' -shots {info["num_shots"]} '
 
-		if "backend" in info:
-			cmd += f'-backend {info["backend"]} '
+		if "qpm_options" in info and "backend" in info["qpm_options"]:
+			if info["qpm_options"]["backend"] in ["CPU", "OpenMP", "MPI", "AMDGPU", "AMDGPU_MPI"]:
+				cmd += f'-backend {info["qpm_options"]["backend"]} '
+			else:
+				logging.debug("Incorrect backend specified in qpm_options. Using default MPI")
+				cmd += f'-backend MPI '
 		else:
 			cmd += f'-backend OPENMP'
 
