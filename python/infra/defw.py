@@ -962,7 +962,10 @@ class Myself:
 		'''
 		global _original_exit
 
+<<<<<<< HEAD
 		common.g_rpc_metrics.dump()
+=======
+>>>>>>> master
 		services.finalize()
 		service_apis.finalize()
 		common.system_shutdown()
@@ -1431,6 +1434,7 @@ if not cdefw_global.get_defw_initialized():
 
 	def sigkill_handler(signum, frame):
 		logging.critical("DEFw received a SIGKILL")
+		common.g_rpc_metrics.dump()
 		me.exit()
 
 	signal.signal(signal.SIGABRT, sigkill_handler)

@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 from api_events import Event
+=======
+>>>>>>> master
 from defw_agent_info import *
 from defw_util import prformat, fg, bg
 from defw import me
@@ -16,12 +19,19 @@ class UTIL_QRC:
 	THREAD_STATE_BUSY = 1
 
 	def __init__(self, num_workers=8, num_worker_tasks=256, start=True):
+<<<<<<< HEAD
 		print_thread_stack_trace_to_logger(level='debug')
+=======
+		print_thread_stack_trace_to_logger(level='critical')
+>>>>>>> master
 		self.shutdown_workers = False
 		self.circuit_results_lock = threading.Lock()
 		self.worker_pool_lock = threading.Lock()
 		self.circuit_results = []
+<<<<<<< HEAD
 		self.push_info = {}
+=======
+>>>>>>> master
 		self.module_util = None
 		self.worker_pool = []
 		self.worker_pool_rr = 0
@@ -34,7 +44,11 @@ class UTIL_QRC:
 			for x in range(0, self.num_workers):
 				with self.worker_pool_lock:
 					runner = threading.Thread(target=self.runner, args=(x,))
+<<<<<<< HEAD
 					logging.debug(f"inserting worker:{x} in the worker pool")
+=======
+					logging.debug(f"inserting {x} in the worker pool")
+>>>>>>> master
 					self.worker_pool.append({'thread': runner,
 											 'active_tasks': [],
 											 'queue': queue.Queue(),
@@ -67,6 +81,7 @@ class UTIL_QRC:
 			cid = circ.get_cid()
 			qasm_file = task_info['qasm_file']
 
+<<<<<<< HEAD
 			# if rc == 0:
 			try:
 				output = self.parse_result(stdout)
@@ -82,6 +97,22 @@ class UTIL_QRC:
 			# 	logging.debug(f"run_circuit_async: rc = {rc}, output = {res}")
 			# 	output = "{result: "+ f"{res}" + "}"
 			# 	circ.set_fail()
+=======
+			if rc == 0:
+				try:
+					output = self.parse_result(stdout)
+					circ.set_exec_done()
+				except Exception as e:
+					logging.critical(f"parse result failure = {e}")
+					output = "{result: missing, exception: "+ f"{e}" + "}"
+					circ.set_fail()
+			else:
+				stdout = stdout.decode('utf-8')
+				stderr = stderr.decode('utf-8')
+				res = stdout + '\n' + stderr
+				output = "{result: "+ f"{res}" + "}"
+				circ.set_fail()
+>>>>>>> master
 
 			try:
 				os.remove(qasm_file)
@@ -100,6 +131,7 @@ class UTIL_QRC:
 				 'cq_dequeue_time': -1 }
 
 			circ.free_resources(circ)
+<<<<<<< HEAD
 
 			# push the result if push info were registered:
 			if self.push_info:
@@ -116,6 +148,13 @@ class UTIL_QRC:
 		for task_info in complete:
 			self.worker_pool[wid]['active_tasks'].remove(task_info)
 			logging.debug(f"Removed task {task_info['circ'].get_cid()} from active tasks of worker {wid}")
+=======
+			with self.circuit_results_lock:
+				self.circuit_results.append(r)
+
+		for task_info in complete:
+			self.worker_pool[wid]['active_tasks'].remove(task_info)
+>>>>>>> master
 
 	def runner(self, my_id):
 		# get the next available entry on the queue
@@ -123,7 +162,10 @@ class UTIL_QRC:
 		# check on currently running tasks to see if any of them complete
 		# Add completed tasks to the results dictionary
 		super_affinity = os.sched_getaffinity(0)
+<<<<<<< HEAD
 		# available_cores = sorted(list(super_affinity))
+=======
+>>>>>>> master
 		with self.worker_pool_lock:
 			my_queue = self.worker_pool[my_id]['queue']
 			# bind to core
@@ -144,6 +186,7 @@ class UTIL_QRC:
 				logging.critical(f'Failed to bind {threading.get_ident()} to {bound_core}')
 				raise e
 
+<<<<<<< HEAD
 			# bound_core = available_cores[my_id % len(available_cores)]
 			# try:
 			# 	logging.debug(f'binding {threading.get_ident()} to {bound_core} from {super_affinity}')
@@ -152,6 +195,8 @@ class UTIL_QRC:
 			# 	logging.critical(f'Failed to bind {threading.get_ident()} to {bound_core}')
 			# 	raise e
 
+=======
+>>>>>>> master
 		while not self.shutdown_workers:
 			empty = False
 			try:
@@ -196,6 +241,7 @@ class UTIL_QRC:
 					self.worker_pool[my_id]['active_tasks'].append(task_info)
 
 	def read_cq(self, cid=None):
+<<<<<<< HEAD
 		logging.debug(f"read_cq called with cid = {cid}")
 		if cid:
 			with self.circuit_results_lock:
@@ -207,15 +253,28 @@ class UTIL_QRC:
 						r = self.circuit_results.pop(i)
 						logging.debug(f"read_cq found {cid} at index {i}")
 						logging.debug(f"read_cq returning {r}")
+=======
+		if cid:
+			with self.circuit_results_lock:
+				i = 0
+				for e in self.circuit_results:
+					if cid == e['cid']:
+						r = self.circuit_results.pop(i)
+>>>>>>> master
 						r['cq_dequeue_time'] = time.time()
 						return r
 					i += 1
 		else:
+<<<<<<< HEAD
 			logging.debug("No cid provided, returning first result if available")
 			with self.circuit_results_lock:
 				logging.debug(f"inside lock for cid = None, circuit_results length = {len(self.circuit_results)}")
 				if len(self.circuit_results) > 0:
 					logging.debug("Returning first result in circuit_results")
+=======
+			with self.circuit_results_lock:
+				if len(self.circuit_results) > 0:
+>>>>>>> master
 					r = self.circuit_results.pop(0)
 					r['cq_dequeue_time'] = time.time()
 					return r

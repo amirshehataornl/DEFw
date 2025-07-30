@@ -125,9 +125,15 @@ def get_class_from_db(class_id):
 def del_entry_from_class_db(class_id):
 	if class_id in global_class_db:
 		instance = global_class_db[class_id]
+<<<<<<< HEAD
 		logging.debug(f"removing instance for {type(instance).__name__} "\
 					"with id {class_id}")
 		del global_class_db[class_id]
+=======
+		logging.debug(f"destroying instance for {type(instance).__name__} "\
+					"with id {class_id}")
+		del(global_class_db[class_id])
+>>>>>>> master
 
 def dump_class_db():
 	for k, v in global_class_db.items():

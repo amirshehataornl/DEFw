@@ -43,7 +43,11 @@ class Circuit:
 
 	def setup_circuit_run_details(self, max_qubits):
 		# TODO: Make MPI configuration decisions based
+<<<<<<< HEAD
 		# on the circuit meta data. Also, correct place to choose QPM backend automatically!
+=======
+		# on the circuit meta data
+>>>>>>> master
 
 		try:
 			self.info['exec'] = os.environ['QFW_LAUNCHER_BIN']
