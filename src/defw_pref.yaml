@@ -1,0 +1,7 @@
+editor: /usr/bin/vim
+loglevel: debug
+halt_on_exception: false
+remote copy: false
+RPC timeout: 300
+num_intfs: 3
+cmd verbosity: true

@@ -1,0 +1,15 @@
+[2025-07-28 13:52:08,962:defw_cmd.py:7:exec_cmd():Thread-140435476518144]-> executing -> /usr/bin/lscpu
+[2025-07-28 13:52:10,323:__init__.py:23:qpm_complete_init():Thread-140435443148480]-> QPM Initialized Successfully
+[2025-07-28 13:52:10,580:__init__.py:32:qpm_complete_init():Thread-140435028702912]-> QPM Initialized Successfully
+[2025-07-28 13:52:10,618:__init__.py:32:qpm_complete_init():Thread-140434626049728]-> QPM Initialized Successfully
+[2025-07-28 13:52:10,691:__init__.py:32:qpm_complete_init():Thread-140434223396544]-> Qiskit-Aer QPM Initialized Successfully
+[2025-07-28 13:52:10,754:__init__.py:32:qpm_complete_init():Thread-140433820743360]-> Ion-Q QPM Initialized Successfully
+[2025-07-28 13:52:10,917:__init__.py:32:qpm_complete_init():Thread-140433418090176]-> QTensor QPM Initialized Successfully
+[2025-07-28 13:52:11,033:__init__.py:32:qpm_complete_init():Thread-140433015436992]-> QPM Initialized Successfully
+[2025-07-28 13:52:11,041:__init__.py:23:qpm_complete_init():Thread-140432612783808]-> QPM Initialized Successfully
+[2025-07-28 13:52:11,045:__init__.py:32:qpm_complete_init():Thread-140432210130624]-> QPM Initialized Successfully
+[2025-07-28 13:52:11,045:__init__.py:32:qpm_complete_init():Thread-140431807477440]-> QPM Initialized Successfully
+[2025-07-28 13:52:11,046:__init__.py:32:qpm_complete_init():Thread-140431404824256]-> Qiskit-Aer QPM Initialized Successfully
+[2025-07-28 13:52:11,046:__init__.py:32:qpm_complete_init():Thread-140431002171072]-> Ion-Q QPM Initialized Successfully
+[2025-07-28 13:52:11,048:__init__.py:32:qpm_complete_init():Thread-140430599517888]-> QTensor QPM Initialized Successfully
+[2025-07-28 13:52:11,052:__init__.py:32:qpm_complete_init():Thread-140430196864704]-> QPM Initialized Successfully
