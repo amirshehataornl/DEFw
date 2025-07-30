@@ -1,8 +1,4 @@
 from defw_agent_info import *
-<<<<<<< HEAD
-from api_events import BaseEventAPI
-=======
->>>>>>> master
 from defw_util import expand_host_list, round_half_up, round_to_nearest_power_of_two
 from defw import me
 import logging, uuid, time, queue, threading, logging, yaml
@@ -25,10 +21,6 @@ class UTIL_QPM:
 		self.max_ppn = max_ppn
 		self.setup_host_resources(max_ppn)
 		self.all_results = []
-<<<<<<< HEAD
-		self.push_info = {}
-=======
->>>>>>> master
 
 	def setup_host_resources(self, max_ppn):
 		hl = expand_host_list(os.environ['QFW_QPM_ASSIGNED_HOSTS'])
@@ -41,13 +33,10 @@ class UTIL_QPM:
 
 	def create_circuit(self, info):
 		start = time.time()
-<<<<<<< HEAD
-=======
 		global qpm_initialized
 
 		if not qpm_initialized:
 			raise DEFwNotReady("QPM has not initialized properly")
->>>>>>> master
 
 		cid = str(uuid.uuid4())
 		self.circuits[cid] = Circuit(cid, info, self.free_resources_and_oor)
@@ -79,10 +68,7 @@ class UTIL_QPM:
 		# determine if we have enough hosts to run this circuit
 		# If the number of hosts required is more than the total number
 		# of hosts then we can't run the circuit.
-<<<<<<< HEAD
-=======
 		#logging.critical(f"Available resources = {np}:{num_hosts}:{self.free_hosts}")
->>>>>>> master
 		if num_hosts > len(self.free_hosts.keys()):
 			raise DEFwOutOfResources(f"hosts requested is more than available" \
 									 f" Available resources = {np}:{num_hosts}:{self.free_hosts}")
@@ -90,16 +76,9 @@ class UTIL_QPM:
 		tmp_resources = {}
 		consumed_res = {}
 		itrnp = 0
-<<<<<<< HEAD
-		logging.debug(f"Hosts currently free: {self.free_hosts.keys()}")
-		for host in self.free_hosts.keys():
-			if np == 0:
-				break
-=======
 		for host in self.free_hosts.keys():
 			if np == 0:
 				break;
->>>>>>> master
 			tmp_resources[host] = self.free_hosts[host]
 			if self.free_hosts[host] >= np:
 				self.free_hosts[host] = self.free_hosts[host] - np
@@ -120,10 +99,6 @@ class UTIL_QPM:
 
 		circ.info['hosts'] = consumed_res
 		logging.debug(f"Circuit consumed: {consumed_res}")
-<<<<<<< HEAD
-		logging.debug(f"Available resources {self.free_hosts[host]}")
-=======
->>>>>>> master
 
 	def process_oor_queue(self):
 		while True:
@@ -133,35 +108,23 @@ class UTIL_QPM:
 				# now that we have the resources for the circuit secured
 				# pop that entry off the queue.
 				cid = self.oor_queue.get(block=False)
-<<<<<<< HEAD
-=======
 				#logging.critical(f"Pulled {cid} off the OOR queue")
->>>>>>> master
 				self.async_run_oor(cid, self.common_run)
 			except DEFwOutOfResources:
 				break
 
 	def free_resources(self, circ):
 		res = circ.info['hosts']
-<<<<<<< HEAD
 		logging.debug(f"Freeing resources {res.keys()}")
-=======
->>>>>>> master
 		for host in res.keys():
 			if host not in self.free_hosts:
 				raise DEFwError(f"Circuit has untracked host: {host}")
 			if res[host] + self.free_hosts[host] > self.max_ppn:
 				raise DEFwError("Returning more resources than originally had")
 			self.free_hosts[host] += res[host]
-<<<<<<< HEAD
 		logging.debug(f"Available resources {self.free_hosts[host]}")
 		circ.set_done()
 		cid = circ.get_cid()
-=======
-		circ.set_done()
-		cid = circ.get_cid()
-		#logging.critical(f"Deleting circuit {cid}:{self.free_hosts}:{circ.info['hosts']}")
->>>>>>> master
 		self.delete_circuit(cid)
 
 	def free_resources_and_oor(self, circ):
