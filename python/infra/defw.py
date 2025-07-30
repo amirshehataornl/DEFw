@@ -962,10 +962,7 @@ class Myself:
 		'''
 		global _original_exit
 
-<<<<<<< HEAD
 		common.g_rpc_metrics.dump()
-=======
->>>>>>> master
 		services.finalize()
 		service_apis.finalize()
 		common.system_shutdown()
