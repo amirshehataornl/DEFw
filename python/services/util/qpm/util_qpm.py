@@ -1,5 +1,6 @@
 from defw_agent_info import *
 from defw_util import expand_host_list, round_half_up, round_to_nearest_power_of_two
+from api_events import BaseEventAPI
 from defw import me
 import logging, uuid, time, queue, threading, logging, yaml
 from defw_exception import DEFwError, DEFwNotReady, DEFwInProgress
@@ -21,6 +22,7 @@ class UTIL_QPM:
 		self.max_ppn = max_ppn
 		self.setup_host_resources(max_ppn)
 		self.all_results = []
+		self.push_info = {}
 
 	def setup_host_resources(self, max_ppn):
 		hl = expand_host_list(os.environ['QFW_QPM_ASSIGNED_HOSTS'])

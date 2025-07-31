@@ -39,24 +39,6 @@ class QRC(UTIL_QRC):
 		info = circ.info
 
 		ionq_executable = shutil.which(info['qfw_backend'])
-		gpuwrapper = shutil.which("gpuwrapper.sh")
-
-		if not ionq_executable or not gpuwrapper:
-			raise DEFwExecutionError("Couldn't find ionq_executable or gpuwrapper. Check paths")
-
-		if not os.path.exists(info["qfw_dvm_uri_path"].split('file:')[1]):
-			raise DEFwExecutionError(f"dvm-uri {info['qfw_dvm_uri_path']} doesn't exist")
-
-		hosts = list(info["hosts"].keys())[0] + ":1"
-
-		try:
-			dvm = info["qfw_dvm_uri_path"]
-		except:
-			dvm = "search"
-
-		exec_cmd = shutil.which(info["exec"])
-
-		logging.debug(f"ionq_executable: {ionq_executable}, gpuwrapper: {gpuwrapper}, dvm: {dvm}, exec_cmd: {exec_cmd}")
 
 		backend_chosen = ""
 		if "qpm_options" in info:
