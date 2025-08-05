@@ -1,4 +1,5 @@
 from defw_agent_info import *
+from api_events import BaseEventAPI
 from defw_util import expand_host_list, round_half_up, round_to_nearest_power_of_two
 from api_events import BaseEventAPI
 from defw import me
@@ -35,10 +36,6 @@ class UTIL_QPM:
 
 	def create_circuit(self, info):
 		start = time.time()
-		global qpm_initialized
-
-		if not qpm_initialized:
-			raise DEFwNotReady("QPM has not initialized properly")
 
 		cid = str(uuid.uuid4())
 		self.circuits[cid] = Circuit(cid, info, self.free_resources_and_oor)
@@ -70,7 +67,6 @@ class UTIL_QPM:
 		# determine if we have enough hosts to run this circuit
 		# If the number of hosts required is more than the total number
 		# of hosts then we can't run the circuit.
-		#logging.critical(f"Available resources = {np}:{num_hosts}:{self.free_hosts}")
 		if num_hosts > len(self.free_hosts.keys()):
 			raise DEFwOutOfResources(f"hosts requested is more than available" \
 									 f" Available resources = {np}:{num_hosts}:{self.free_hosts}")
@@ -110,7 +106,6 @@ class UTIL_QPM:
 				# now that we have the resources for the circuit secured
 				# pop that entry off the queue.
 				cid = self.oor_queue.get(block=False)
-				#logging.critical(f"Pulled {cid} off the OOR queue")
 				self.async_run_oor(cid, self.common_run)
 			except DEFwOutOfResources:
 				break

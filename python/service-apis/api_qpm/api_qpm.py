@@ -16,6 +16,7 @@ class QPMType(IntFlag):
 class QPMCapability(IntFlag):
 	QPM_CAP_TENSORNETWORK	= 1 << 0
 	QPM_CAP_STATEVECTOR		= 1 << 1
+	QPM_CAP_IONTRAP			= 1 << 2
 
 class QPM(BaseRemote):
 	def __init__(self, si):

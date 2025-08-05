@@ -21,4 +21,4 @@ export QFW_MODULE_USE_PATH="/sw/frontier/ums/ums024/cce/15.0.0/modules/"
 export QFW_PATH=/lustre/orion/gen008/proj-shared/qhpc/srikar/qfw_related/QFw
 export QFW_BIN_PATH=$QFW_PATH/bin
 export QFW_QPM_START_QRC=on
-
+export IONQ_API_KEY="FvoHMZhguJptdSIHwDlQ3E6z0vqNbEl7" # Srikar's personal key from ORNL group via QCUP, CSC500.

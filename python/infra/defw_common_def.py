@@ -1,13 +1,33 @@
 import cdefw_global
 from defw_exception import DEFwError, DEFwDumper, DEFwNotFound
 import logging, os, yaml, shutil, threading, time, sys
+import cdefw_global
+from pathlib import Path
 from collections import deque
 
-DEFW_STATUS_STRING = 'IFW STATUS: '
+FILE_HANDLER = None
+CUSTOM_LEVELS = {}
+
+# DEFAULT LOG LEVELS
+DEFW_LOG_LEVEL_INFRA =			30
+DEFW_LOG_LEVEL_SERVICES =		31
+DEFW_LOG_LEVEL_EXPERIMENTS = 	32
+DEFW_LOG_LEVEL_WORKER =			33
+DEFW_LOG_LEVEL_STACKTRACE =		34
+DEFW_LOG_LEVEL_APP =			35
+
+DEFW_LOG_LEVEL_INFRA_NAME =				"DEFW_INFRA"
+DEFW_LOG_LEVEL_SERVICES_NAME =			"DEFW_SERVICES"
+DEFW_LOG_LEVEL_EXPERIMENTS_NAME =		"DEFW_EXPERIMENTS"
+DEFW_LOG_LEVEL_WORKER_NAME =			"DEFW_WORKERS"
+DEFW_LOG_LEVEL_STACKTRACE_NAME =		"DEFW_STACKTRACE"
+DEFW_LOG_LEVEL_APP_NAME =				"DEFW_APP"
+
+DEFW_STATUS_STRING = 'DEFw STATUS: '
 DEFW_STATUS_SUCCESS = 'Success'
 DEFW_STATUS_FAILURE = 'Failure'
 DEFW_STATUS_IGNORE = 'Ignore'
-DEFW_CODE_STRING = 'IFW CODE: '
+DEFW_CODE_STRING = 'DEFw CODE: '
 MASTER_PORT = 8494
 MASTER_DAEMON_PORT = 8495
 AGENT_DAEMON_PORT = 8094
@@ -222,19 +242,89 @@ def set_script_remote_cp(enable):
 	global_pref['remote copy'] = enable
 	save_pref()
 
-def set_logging_level(level):
+def set_logging_level_helper(levelno):
+	global FILE_HANDLER
+	global CUSTOM_LEVELS
+
+	root_logger = logging.getLogger('')
+	for handler in root_logger.handlers[:]:
+		root_logger.removeHandler(handler)
+
+	root_logger.setLevel(levelno)
+
+	FILE_HANDLER.setLevel(levelno)
+	for filt in FILE_HANDLER.filters[:]:
+		FILE_HANDLER.removeFilter(filt)
+	if levelno in CUSTOM_LEVELS.values():
+		FILE_HANDLER.addFilter(ExclusiveLevelFilter(levelno))
+
+	root_logger.addHandler(FILE_HANDLER)
+
+class ExclusiveLevelFilter(logging.Filter):
+	def __init__(self, levelno):
+		super().__init__()
+		self.levelno = levelno
+
+	def filter(self, record):
+		return record.levelno == self.levelno or record.levelno == logging.CRITICAL
+
+def add_logging_level(log_level, level_name):
+	global CUSTOM_LEVELS
+
+	func_name = level_name.lower()
+	logging.addLevelName(log_level, level_name.upper())
+
+	def custom_level_logger(message, *args, **kwargs):
+		if logging.getLogger().isEnabledFor(log_level):
+			logging.getLogger()._log(log_level, message, args, **kwargs)
+
+	CUSTOM_LEVELS[level_name.upper()] = log_level
+
+	setattr(logging, func_name, custom_level_logger)
+
+def set_logging_level(level, save=True):
 	'''
 	Set Python log level. One of: critical, debug, error, fatal
 	'''
 	global global_pref
+	global CUSTOM_LEVELS
 
 	try:
-		log_level = getattr(logging, level.upper())
-		logging.getLogger('').setLevel(log_level)
-		global_pref['loglevel'] = level
-	except:
+		if level.upper() in CUSTOM_LEVELS:
+			log_level = CUSTOM_LEVELS[level.upper()]
+		else:
+			log_level = getattr(logging, level.upper())
+		set_logging_level_helper(log_level)
+		if save:
+			global_pref['loglevel'] = level
+	except Exception as e:
+		logging.critical(f"error encountered {e}")
 		logging.critical("Log level must be one of: critical, debug, error, fatal")
-	save_pref()
+	if save:
+		save_pref()
+
+def setup_log_file():
+	global FILE_HANDLER
+
+	py_log_path = cdefw_global.get_defw_tmp_dir()
+	Path(py_log_path).mkdir(parents=True, exist_ok=True)
+	flog_name = os.path.join(py_log_path, "defw_py.log")
+	flog_mode = 'w'
+	printformat = "[%(asctime)s:%(filename)s:%(lineno)s:%(funcName)s():Thread-%(thread)d]-> %(message)s"
+
+	logging.basicConfig(filename=flog_name, filemode='w',
+						format=printformat)
+
+	FILE_HANDLER = logging.FileHandler(flog_name, mode=flog_mode)
+	FILE_HANDLER.setFormatter(logging.Formatter(printformat))
+
+def setup_log_levels():
+	add_logging_level(DEFW_LOG_LEVEL_INFRA, DEFW_LOG_LEVEL_INFRA_NAME)
+	add_logging_level(DEFW_LOG_LEVEL_SERVICES, DEFW_LOG_LEVEL_SERVICES_NAME)
+	add_logging_level(DEFW_LOG_LEVEL_EXPERIMENTS, DEFW_LOG_LEVEL_EXPERIMENTS_NAME)
+	add_logging_level(DEFW_LOG_LEVEL_WORKER, DEFW_LOG_LEVEL_WORKER_NAME)
+	add_logging_level(DEFW_LOG_LEVEL_STACKTRACE, DEFW_LOG_LEVEL_STACKTRACE_NAME)
+	add_logging_level(DEFW_LOG_LEVEL_APP, DEFW_LOG_LEVEL_APP_NAME)
 
 def set_cmd_verbosity(value):
 	'''
@@ -257,7 +347,7 @@ def is_cmd_verbosity():
 
 def load_pref():
 	'''
-	Load the IFW preferences.
+	Load the DEFw preferences.
 		editor - the editor of choice to use for editing scripts
 		halt_on_exception - True to throw an exception on first error
 				    False to continue running scripts
@@ -266,7 +356,10 @@ def load_pref():
 	global GLOBAL_PREF_DEF
 	global global_pref
 
-	global_pref_file = os.path.join(cdefw_global.get_defw_tmp_dir(), 'defw_pref.yaml')
+	try:
+		global_pref_file = os.environ['DEFW_PREF_PATH']
+	except:
+		global_pref_file = os.path.join(cdefw_global.get_defw_tmp_dir(), 'defw_pref.yaml')
 
 	if os.path.isfile(global_pref_file):
 		with open(global_pref_file, 'r') as f:
@@ -279,12 +372,12 @@ def load_pref():
 				for k, v in GLOBAL_PREF_DEF.items():
 					if not k in global_pref:
 						global_pref[k] = v
-		save_pref()
+	save_pref()
 	return global_pref
 
 def save_pref():
 	'''
-	Save the IFW preferences.
+	Save the DEFw preferences.
 		editor - the editor of choice to use for editing scripts
 		halt_on_exception - True to throw an exception on first error
 				    False to continue running scripts
@@ -292,12 +385,19 @@ def save_pref():
 	'''
 	global global_pref
 
-	global_pref_file = os.path.join(cdefw_global.get_defw_tmp_dir(), 'defw_pref.yaml')
+	try:
+		global_pref_file = os.environ['DEFW_PREF_PATH']
+	except:
+		global_pref_file = os.path.join(cdefw_global.get_defw_tmp_dir(), 'defw_pref.yaml')
+
 	with open(global_pref_file, 'w') as f:
 		f.write(yaml.dump(global_pref, Dumper=DEFwDumper, indent=2, sort_keys=False))
+
+	with open(global_pref_file, 'r') as f:
+		p = yaml.load(f, Loader=yaml.FullLoader)
+		set_logging_level(p['loglevel'], save=False)
 
 def dump_pref():
 	global global_pref
 	print(yaml.dump(global_pref, Dumper=DEFwDumper, indent=2, sort_keys=True))
-
 

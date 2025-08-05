@@ -9,7 +9,7 @@ from time import sleep
 import util.qpm.util_qpm as uq
 
 SERVICE_NAME = 'QPM'
-SERVICE_DESC = 'Quantum Platform Manager for NW-QSIM'
+SERVICE_DESC = 'Quantum Platform Manager for NWQSIM'
 
 # This is used by the infrastructure to display information about
 # the service module. The name is also used as a key through out the

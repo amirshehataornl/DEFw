@@ -1,10 +1,14 @@
 import sys, os, logging
 from .svc_qrc import QRC
 from util.qpm.util_qpm import UTIL_QPM
+from util.qpm.util_circuit import set_max_qubits_pp
+
+MAX_NWQSIM_QUBITS = 32
 
 class QPM(UTIL_QPM):
 	def __init__(self, start=True):
 		super().__init__(QRC(start=start), start=start)
+		set_max_qubits_pp(MAX_NWQSIM_QUBITS)
 
 	def query(self):
 		from . import SERVICE_NAME, SERVICE_DESC
