@@ -723,7 +723,7 @@ class Suites(MethodInterceptor):
 				break
 			for d in dirs:
 				if d.startswith(self.suite_prefix):
-					name = d.replace(suite_prefix, '')
+					name = d.replace(self.suite_prefix, '')
 					db[name] = ASuite(path, d, self.__prefix,
 									self.__disabled_methods)
 
@@ -869,12 +869,12 @@ class ExpSuites(Suites):
 		paths.append(os.path.join(defw_path, "python", "experiments"))
 		try:
 			v = defw_config_yaml['defw']['external-experiments']
-			paths += v.split(':')
-			setup_external_paths(paths)
+			if(v):
+				paths += v.split(':')
+				setup_external_paths(paths)
 		except:
 			pass
-		super().__init__(paths, prefix="exp_",
-						 suite_prefix='exp_')
+		super().__init__(paths, prefix="exp_")
 
 import builtins
 _original_exit = builtins.exit
