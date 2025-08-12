@@ -12,8 +12,8 @@ class QRC(UTIL_QRC):
         logging.debug("Initializing IonQ QRC")
         super().__init__(start=start)
 
-        os.environ["IONQ_API_KEY"]="FvoHMZhguJptdSIHwDlQ3E6z0vqNbEl7"
-        os.environ["HTTPS_PROXY"]="http://proxy.ccs.ornl.gov:3128/"
+        os.environ["IONQ_API_KEY"]=""
+        os.environ["HTTPS_PROXY"]=""
 
     def form_cmd(self, circ, qasm_file):
         """

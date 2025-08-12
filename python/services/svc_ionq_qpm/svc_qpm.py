@@ -7,8 +7,8 @@ class QPM(UTIL_QPM):
         logging.debug("Initializing IONQ QPM")
         super().__init__(QRC(start=start), start=start)
 
-        os.environ["IONQ_API_KEY"]="FvoHMZhguJptdSIHwDlQ3E6z0vqNbEl7"
-        os.environ["HTTPS_PROXY"]="http://proxy.ccs.ornl.gov:3128/"
+        os.environ["IONQ_API_KEY"]=""
+        os.environ["HTTPS_PROXY"]=""
 
         # Check if IonQ API key exists in environment
         if "IONQ_API_KEY" not in os.environ:

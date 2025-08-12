@@ -55,6 +55,7 @@ class UTIL_QRC:
 			try:
 				#stdout, stderr, rc = task_info['launcher'].status(task_info['pid'])
 				stdout, stderr, rc = self.launcher.status(task_info['pid'])
+				logging.debug(f"got stdout = {stdout} stderr = {stderr} rc = {rc} for pid {task_info['pid']}")
 			except DEFwInProgress:
 				continue
 			except Exception as e:
