@@ -113,6 +113,9 @@ static defw_rc_t python_setup(void)
 		"sys.path.append(os.path.join('%s', 'src'))", infra);
 	RUN_PYTHON_CMD(buf);
 
+	RUN_PYTHON_CMD("from defw_venv import add_venv_sitepackages\n");
+	RUN_PYTHON_CMD("add_venv_sitepackages()\n");
+
 	RUN_PYTHON_CMD("import defw\n");
 	RUN_PYTHON_CMD("from defw import me,experiments,"
 		"services,service_apis,client_agents,service_agents,"
