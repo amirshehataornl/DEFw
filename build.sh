@@ -3,13 +3,6 @@
 # Initialize variables
 build_cfg=""
 
-if [[ $# -ne 2 ]]; then
-  echo "Error: Exactly one parameter (-p) is required."
-  echo "Usage: $0 -p <scons parameters>"
-  exit 1
-fi
-
-
 # Parse command-line arguments
 while getopts "p:" opt; do
   case ${opt} in

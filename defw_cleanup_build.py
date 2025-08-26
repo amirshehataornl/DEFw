@@ -21,6 +21,6 @@ def clean(cfg):
 
 if __name__ == "__main__":
 	if len(sys.argv) != 2:
-		raise ValueError("script should be called with DEFW build configuration file")
+		exit(0)
 
 	clean(sys.argv[1])
