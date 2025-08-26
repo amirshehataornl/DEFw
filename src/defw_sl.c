@@ -54,8 +54,9 @@ defw_run_mode_t handle_cmd_line_opt(int argc, char *argv[], char **module, char 
 	int cOpt;
 	defw_run_mode_t shell = EN_DEFW_RUN_CMD_LINE;
 	/* If followed by a ':', the option requires an argument*/
-	const char *const short_options = "c:m:dxh";
+	const char *const short_options = "c:m:vdxh";
 	const struct option long_options[] = {
+		{.name = "py-version", .has_arg = no_argument, .val = 'v'},
 		{.name = "cmd", .has_arg = required_argument, .val = 'c'},
 		{.name = "module", .has_arg = required_argument, .val = 'm'},
 		{.name = "deamon", .has_arg = no_argument, .val = 'd'},
@@ -100,6 +101,9 @@ defw_run_mode_t handle_cmd_line_opt(int argc, char *argv[], char **module, char 
 			case 'd':
 				shell = EN_DEFW_RUN_DAEMON;
 				break;
+			case 'v':
+				python_print_version();
+				exit(DEFW_EXIT_NORMAL);
 			case 'x':
 				*spawned = true;
 				break;
@@ -136,6 +140,9 @@ defw_rc_t defw_start(int argc, char *argv[])
 	char *bin_name;
 	bool spawned = false;
 	bool pure_python = false;
+
+	if (!python_check_version())
+		exit(DEFW_PYTHON_VERSION_MISMATCH);
 
 	memset(&g_defw_cfg, 0, sizeof(g_defw_cfg));
 

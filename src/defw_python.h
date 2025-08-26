@@ -22,6 +22,19 @@ defw_rc_t python_init(char *pname);
 defw_rc_t python_finalize(void);
 
 /*
+ * python_print_version
+ *   Print the version of python DEFw was compiled with
+ */
+void python_print_version(void);
+
+/*
+ * python_check_version
+ *   Check the version of python DEFw was compiled against the runtime
+ *   version
+ */
+int python_check_version(void);
+
+/*
  * python_run_interpreter
  *	this runs the interpreter passing it whatever command line
  *	arguments were passed to the program. The intent is to make the

@@ -359,6 +359,54 @@ defw_rc_t python_finalize()
 	return EN_DEFW_RC_OK;
 }
 
+void python_print_version()
+{
+	const char *version;
+	char pyversion[MAX_STR_LEN];
+	char *end;
+
+	Py_Initialize();
+	version = Py_GetVersion();
+
+	end = strchr(version, ' ');
+	if (end) {
+		int len = (end - version) + 1;
+		snprintf(pyversion, len, "%s", version);
+	} else {
+		strcpy(pyversion, version);
+	}
+
+	fprintf(stdout, "%s\n", pyversion);
+	Py_Finalize();
+}
+
+int python_check_version()
+{
+	const char *version;
+	int check = 1;
+	char pyversion[MAX_STR_LEN];
+	char *end;
+
+	Py_Initialize();
+	version = Py_GetVersion();
+	end = strchr(version, ' ');
+	if (end) {
+		int len = (end - version) + 1;
+		snprintf(pyversion, len, "%s", version);
+	} else {
+		strcpy(pyversion, version);
+	}
+
+	if (strncmp(version, PY_VERSION, strlen(PY_VERSION)) != 0) {
+		fprintf(stderr, "Version mismatch! Headers %s vs runtime %s\n",
+			PY_VERSION, pyversion);
+		check = 0;
+	}
+	Py_Finalize();
+
+	return check;
+}
+
 typedef enum python_callbacks {
 	EN_PY_CB_REQUEST,
 	EN_PY_CB_RESPONSE,
