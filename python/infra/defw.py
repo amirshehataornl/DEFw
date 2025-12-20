@@ -834,14 +834,18 @@ class ServiceSuites(ServiceSuitesBase):
 		global defw_config_yaml
 
 		paths = []
+		aux_paths = []
 		paths.append(os.path.join(defw_path, "python", "services"))
 		try:
+			tmp_paths = []
 			v = defw_config_yaml['defw']['external-services']
-			paths += v.split(':')
-			setup_external_paths(paths)
+			tmp_paths += v.split(':')
+			setup_external_paths(tmp_paths)
+			for p in tmp_paths:
+				aux_paths.apend(os.path.join(p, 'python'))
 		except:
 			pass
-		super().__init__(paths,
+		super().__init__(aux_paths+paths,
 						 prefix="svc_", disabled_methods=['run', 'edit'],
 						 suite_prefix="svc_")
 
