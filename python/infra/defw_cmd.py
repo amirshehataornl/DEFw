@@ -75,7 +75,7 @@ def defw_exec_remote_cmd(cmd, host, username='', ignore_err=False, deamonize=Fal
 	err = ''
 	if stdout.channel.recv_ready():
 		out = read_from_stream(stdout)
-	if stdout.channel.recv_ready():
+	if stderr.channel.recv_ready():
 		err = read_from_stream(stderr)
 	stdin.close()
 	stdout.close()
