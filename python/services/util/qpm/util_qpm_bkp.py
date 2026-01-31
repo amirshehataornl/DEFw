@@ -30,7 +30,7 @@ class UTIL_QPM:
 		self.all_results_lock = threading.Lock()
 		self.push_info_lock = threading.Lock()
 
-		# call init after locks! stupid srikar
+		# call init after locks are defined!
 		self.setup_host_resources(max_ppn)
 
 	def setup_host_resources(self, max_ppn):
@@ -39,9 +39,9 @@ class UTIL_QPM:
 		for h in hl:
 			comp = h.split(':')
 			if len(comp) == 1:
-					self.free_hosts[comp[0]] = max_ppn
+				self.free_hosts[comp[0]] = max_ppn
 			elif len(comp) == 2:
-					self.free_hosts[comp[0]] = int(comp[1])
+				self.free_hosts[comp[0]] = int(comp[1])
 
 	def create_circuit(self, info):
 		start = time.time()

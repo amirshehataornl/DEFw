@@ -1,1 +1,0 @@
-export IONQ_API_KEY="FvoHMZhguJptdSIHwDlQ3E6z0vqNbEl7" # Srikar's personal key from ORNL group via QCUP, CSC500.

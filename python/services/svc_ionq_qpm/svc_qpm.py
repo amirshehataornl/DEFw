@@ -1,4 +1,4 @@
-import os, logging
+import os, logging, yaml
 from util.qpm.util_qpm import UTIL_QPM
 from .svc_qrc import QRC
 
@@ -7,11 +7,12 @@ class QPM(UTIL_QPM):
         logging.debug("Initializing IONQ QPM")
         super().__init__(QRC(start=start), start=start)
 
-        os.environ["IONQ_API_KEY"]=""
-        os.environ["HTTPS_PROXY"]=""
+        self.provider = "IONQ"
+        self.load_ionq_env_yaml()
 
-        # Check if IonQ API key exists in environment
-        if "IONQ_API_KEY" not in os.environ:
+        IONQ_API_KEY = os.getenv('IONQ_API_KEY', None)
+
+        if IONQ_API_KEY is None:
             from defw_exception import DEFwError
             logging.debug("IONQ_API_KEY not set in environment!")
             raise DEFwError("IONQ_API_KEY not set in environment!")
@@ -27,6 +28,23 @@ class QPM(UTIL_QPM):
             from defw_exception import DEFwError
             logging.critical(f"IONQ API Key test failed: {e}")
             raise DEFwError(f"IONQ_API_KEY invalid/unreachable: {e}")
+
+    def load_ionq_env_yaml(self, path="ionq_env.yaml"):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"IONQ YAML config not found: {path}")
+
+        with open(path, "r") as f:
+            cfg = yaml.safe_load(f)
+
+        ionq = cfg.get("IONQ", {})
+
+        for key, value in ionq.items():
+            if value is None:
+                logging.warning(f"IONQ config field {key} is None")
+                continue
+            env_key = f"IONQ_{key}"
+            os.environ[env_key] = str(value)
+            logging.debug(f"Set environment variable {env_key} from YAML")
 
     def query(self):
         logging.debug("Querying IONQ QPM info")

@@ -1,4 +1,4 @@
-import logging
+import logging, os, yaml
 from util.qpm.util_qrc import UTIL_QRC
 from qiskit.circuit import QuantumCircuit
 from defw_exception import DEFwError, DEFwInProgress
@@ -12,8 +12,22 @@ class QRC(UTIL_QRC):
         logging.debug("Initializing IonQ QRC")
         super().__init__(start=start)
 
-        os.environ["IONQ_API_KEY"]=""
-        os.environ["HTTPS_PROXY"]=""
+        self.load_ionq_env_yaml()
+
+    def load_ionq_env_yaml(self, path="ionq_env.yaml"):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"IonQ YAML config not found: {path}")
+
+        with open(path, "r") as f:
+            cfg = yaml.safe_load(f)
+
+        ionq = cfg.get("CONFIG", {})
+
+        for key, value in ionq.items():
+            if value is None:
+                logging.warning(f"IonQ config field {key} is None")
+                continue
+            os.environ[f"{key}"] = str(value)
 
     def form_cmd(self, circ, qasm_file):
         """
@@ -64,7 +78,7 @@ class QRC(UTIL_QRC):
             "exec_time": circ.exec_time,
             "completion_time": circ.completion_time,
             "resources_consumed_time": circ.resources_consumed_time,
-            "cq_enqueue_time": tim.time(),
+            "cq_enqueue_time": time.time(),
             "cq_dequeue_time": -1,
         }
 

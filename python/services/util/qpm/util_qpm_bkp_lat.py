@@ -1,12 +1,13 @@
 from defw_agent_info import *
-from api_events import BaseEventAPI
 from defw_util import expand_host_list, round_half_up, round_to_nearest_power_of_two
+from api_events import BaseEventAPI
 from defw import me
 import logging, uuid, time, queue, threading, logging, yaml
 from defw_exception import DEFwError, DEFwNotReady, DEFwInProgress
 import os
 from .util_circuit import Circuit, MAX_PPN
 from statistics import mean, median, stdev
+import copy
 
 qpm_initialized = False
 qpm_shutdown = False
@@ -20,12 +21,12 @@ class UTIL_QPM:
 		self.qrc = qrc
 		self.free_hosts = {}
 		self.max_ppn = max_ppn
+
 		self.all_results = []
 		self.push_info = {}
 
 		# locks for thread safety
 		self.circuits_lock = threading.Lock()
-		self.circuit_results_lock = threading.Lock()
 		self.free_hosts_lock = threading.Lock()
 		self.all_results_lock = threading.Lock()
 		self.push_info_lock = threading.Lock()
@@ -34,14 +35,14 @@ class UTIL_QPM:
 		self.setup_host_resources(max_ppn)
 
 	def setup_host_resources(self, max_ppn):
-		# with self.free_hosts_lock:
 		hl = expand_host_list(os.environ['QFW_QPM_ASSIGNED_HOSTS'])
-		for h in hl:
-			comp = h.split(':')
-			if len(comp) == 1:
-				self.free_hosts[comp[0]] = max_ppn
-			elif len(comp) == 2:
-				self.free_hosts[comp[0]] = int(comp[1])
+		with self.free_hosts_lock:
+			for h in hl:
+				comp = h.split(':')
+				if len(comp) == 1:
+					self.free_hosts[comp[0]] = max_ppn
+				elif len(comp) == 2:
+					self.free_hosts[comp[0]] = int(comp[1])
 
 	def create_circuit(self, info):
 		start = time.time()
@@ -69,13 +70,13 @@ class UTIL_QPM:
 				circ.set_deletion()
 
 	def consume_resources(self, circ):
-		with self.free_hosts_lock:
-			info = circ.info
-			np = info['np']
-			num_hosts = int(np / self.max_ppn)
-			if not num_hosts:
-				num_hosts = 1
+		info = circ.info
+		np = info['np']
+		num_hosts = int(np / self.max_ppn)
+		if not num_hosts:
+			num_hosts = 1
 
+		with self.free_hosts_lock:
 			# determine if we have enough hosts to run this circuit
 			# If the number of hosts required is more than the total number
 			# of hosts then we can't run the circuit.
@@ -86,10 +87,9 @@ class UTIL_QPM:
 			tmp_resources = {}
 			consumed_res = {}
 			itrnp = 0
-			logging.debug(f"Hosts currently free: {self.free_hosts.keys()}")
 			for host in self.free_hosts.keys():
 				if np == 0:
-					break;
+					break
 				tmp_resources[host] = self.free_hosts[host]
 				if self.free_hosts[host] >= np:
 					self.free_hosts[host] = self.free_hosts[host] - np
@@ -110,33 +110,34 @@ class UTIL_QPM:
 
 			circ.info['hosts'] = consumed_res
 			logging.debug(f"Circuit consumed: {consumed_res}")
-			logging.debug(f"Available resources {self.free_hosts[host]}")
 
 	def process_oor_queue(self):
 		while True:
-			if self.oor_queue.empty():
+			try:
+				cid = self.oor_queue.get_nowait()  # Queue is thread-safe
+			except queue.Empty:
 				break
 			try:
-				# now that we have the resources for the circuit secured
-				# pop that entry off the queue.
-				cid = self.oor_queue.get(block=False)
 				self.async_run_oor(cid, self.common_run)
 			except DEFwOutOfResources:
+				# still no resources; put it back and stop trying
+				self.oor_queue.put(cid)
 				break
 
 	def free_resources(self, circ):
 		res = circ.info['hosts']
-		logging.debug(f"Freeing resources {res.keys()}")
-
 		with self.free_hosts_lock:
 			for host in res.keys():
 				if host not in self.free_hosts:
 					raise DEFwError(f"Circuit has untracked host: {host}")
 				if res[host] + self.free_hosts[host] > self.max_ppn:
 					raise DEFwError("Returning more resources than originally had")
-				self.free_hosts[host] += res[host]
 
-		logging.debug(f"Available resources {self.free_hosts[host]}")
+				self.free_hosts[host] += res[host]
+			# safe logging snapshot
+			avail_snapshot = dict(self.free_hosts)
+			logging.debug(f"Available resources (snapshot): {avail_snapshot}")
+
 		circ.set_done()
 		cid = circ.get_cid()
 		self.delete_circuit(cid)
@@ -232,6 +233,8 @@ class UTIL_QPM:
 
 		r = self.qrc.read_cq(cid)
 
+		logging.debug(f"at qpm, read_cq called with cid = {cid}, result = {r}")
+
 		if not r:
 			if cid:
 				raise DEFwInProgress(f"{cid} still in progress")
@@ -240,7 +243,6 @@ class UTIL_QPM:
 
 		with self.all_results_lock:
 			self.all_results.append(r)
-
 		return r
 
 	def peek_cq(self, cid=None):

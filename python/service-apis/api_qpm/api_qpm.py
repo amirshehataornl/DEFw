@@ -12,11 +12,13 @@ class QPMType(IntFlag):
 	QPM_TYPE_QISKITAER	= 1 << 5
 	QPM_TYPE_QTENSOR	= 1 << 6
 	QPM_TYPE_IONQ		= 1 << 7
+	QPM_TYPE_IBMQ		= 1 << 8
 
 class QPMCapability(IntFlag):
 	QPM_CAP_TENSORNETWORK	= 1 << 0
 	QPM_CAP_STATEVECTOR		= 1 << 1
 	QPM_CAP_IONTRAP			= 1 << 2
+	QPM_CAP_SUPERCONDUCTOR	= 1 << 3
 
 class QPM(BaseRemote):
 	def __init__(self, si):

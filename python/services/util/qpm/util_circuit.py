@@ -94,7 +94,7 @@ class Circuit:
 		self.info['np'] = np
 
 		# ####################################################################################
-		self.info['np'] = 4		 	#################### HARD-CODE for now ###################
+		self.info['np'] = 8		 	#################### HARD-CODE for now ###################
 		# ####################################################################################
 
 		logging.debug(f"Setting number of processes to: {self.info['np']} " \
@@ -159,3 +159,38 @@ class Circuit:
 			return 'DONE'
 		return 'BUG'
 
+	def materialize_qasm(self, tmp_dir: str) -> str:
+		"""Atomically write the QASM to a shared path and return the final filename."""
+		cid = self.get_cid()
+		qasm = self.info["qasm"]
+		qasm_file = os.path.join(tmp_dir, f"{cid}.qasm")
+		qasm_tmp  = qasm_file + ".part"
+
+		# Write -> flush -> fsync, then atomic publish
+		with open(qasm_tmp, "w") as f:
+			f.write(qasm)
+			f.flush()
+			os.fsync(f.fileno())
+		os.replace(qasm_tmp, qasm_file)
+
+		# (Best effort) fsync the directory to speed up cross-node visibility
+		try:
+			dfd = os.open(tmp_dir, os.O_DIRECTORY)
+			try:
+				os.fsync(dfd)
+			finally:
+				os.close(dfd)
+		except Exception:
+			pass
+
+		# tiny visibility guard
+		for _ in range(3):
+			try:
+				if os.path.getsize(qasm_file) > 0:
+					break
+			except FileNotFoundError:
+				pass
+			time.sleep(0.01)
+
+		logging.debug(f"[{cid}] QASM materialized at {qasm_file}")
+		return qasm_file

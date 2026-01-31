@@ -68,23 +68,24 @@ class UTIL_QRC:
 			cid = circ.get_cid()
 			qasm_file = task_info['qasm_file']
 
-			# if rc == 0:
-			try:
-				output = self.parse_result(stdout)
-				circ.set_exec_done()
-			except Exception as e:
-				logging.critical(f"parse result failure = {e}")
-				output = "{result: missing, exception: "+ f"{e}" + "}"
+			if rc == 0:
+				try:
+					output = self.parse_result(stdout)
+					circ.set_exec_done()
+				except Exception as e:
+					logging.critical(f"parse result failure = {e}")
+					output = "{result: missing, exception: "+ f"{e}" + "}"
+					circ.set_fail()
+			else:
+				stdout = stdout.decode('utf-8')
+				stderr = stderr.decode('utf-8')
+				res = stdout + '\n' + stderr
+				logging.debug(f"run_circuit_async: rc = {rc}, output = {res}")
+				output = "{result: "+ f"{res}" + "}"
 				circ.set_fail()
-			# else:
-			# 	stdout = stdout.decode('utf-8')
-			# 	stderr = stderr.decode('utf-8')
-			# 	res = stdout + '\n' + stderr
-			# 	logging.debug(f"run_circuit_async: rc = {rc}, output = {res}")
-			# 	output = "{result: "+ f"{res}" + "}"
-			# 	circ.set_fail()
 
 			try:
+				logging.debug(f"deleting {qasm_file} since completed {cmd}")
 				os.remove(qasm_file)
 			except:
 				pass
@@ -146,6 +147,7 @@ class UTIL_QRC:
 		while not self.shutdown_workers:
 			empty = False
 			try:
+				# with self.worker_pool_lock:
 				circ = my_queue.get(timeout = 0.001) # sleep
 				if circ == None:
 					self.shutdown_workers = True
@@ -224,21 +226,28 @@ class UTIL_QRC:
 		tmp_dir = cdefw_global.get_defw_tmp_dir()
 
 		qasm_c = circ.info["qasm"]
+		# OLD: write the QASM to a file and return the filename
 		qasm_file = os.path.join(tmp_dir, str(cid)+".qasm")
 		with open(qasm_file, 'w') as f:
 			f.write(qasm_c)
+			# f.flush()
+		# NEW: let Circuit make the file atomically
+		# qasm_file = circ.materialize_qasm(tmp_dir)
 
 		circ.set_launching()
 		cmd = self.form_cmd(circ, qasm_file)
 		try:
 			task_info = {}
+			if not os.path.exists(qasm_file):
+				raise DEFwError(f"QASM file {qasm_file} does not exist")
 			pid = self.launcher.launch(cmd)
 			logging.debug(f"Running -- {cmd} -- with pid {pid}")
 			circ.set_running()
 		except Exception as e:
+			logging.debug(f"deleting {qasm_file} since failed to launch {cmd}")
 			os.remove(qasm_file)
 			logging.critical(f"Failed to launch {cmd}")
-			raise e
+			raise DEFwError(f"Failed to launch {cmd}")
 
 		task_info['circ'] = circ
 		task_info['qasm_file'] = qasm_file
@@ -269,10 +278,12 @@ class UTIL_QRC:
 			logging.debug(f"Completed -- {cmd} -- returned {rc} -- {output} -- {error}")
 		except Exception as e:
 			launcher.shutdown()
+			logging.debug(f"deleting {qasm_file} since failed to launch {cmd}")
 			os.remove(qasm_file)
 			logging.critical(f"Failed to launch {cmd}")
 			raise e
 
+		logging.debug(f"deleting {qasm_file} since completed {cmd} with rc = {rc}")
 		os.remove(qasm_file)
 
 		if rc == 0:
