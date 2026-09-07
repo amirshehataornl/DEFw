@@ -25,6 +25,37 @@ ZERO_UUID = str(uuid.UUID(int=0))
 
 peer_events = deque()
 peer_events_lock = threading.Lock()
+peer_event_listeners = []
+peer_event_listeners_lock = threading.Lock()
+
+
+def add_peer_event_listener(listener):
+	if not callable(listener):
+		raise DEFwError("Peer lifecycle listener is not callable")
+	with peer_event_listeners_lock:
+		if listener not in peer_event_listeners:
+			peer_event_listeners.append(listener)
+	return listener
+
+
+def remove_peer_event_listener(listener):
+	with peer_event_listeners_lock:
+		if listener in peer_event_listeners:
+			peer_event_listeners.remove(listener)
+
+
+def is_dirsvc_peer_event(event):
+	return event.get('node_type') == EN_DEFW_DIRSVC
+
+
+def _notify_peer_event_listeners(event):
+	with peer_event_listeners_lock:
+		listeners = list(peer_event_listeners)
+	for listener in listeners:
+		try:
+			listener(dict(event))
+		except Exception:
+			logging.exception("Peer lifecycle listener failed")
 
 
 def is_ready_dirsvc_peer(event, peer_record):
@@ -362,6 +393,7 @@ class WorkerThread:
 				"Directory service peer is ready; binding dirsvc API")
 			self.spawn_temporary_worker(
 				self.bind_dirsvc_peer, peer_record)
+		_notify_peer_event_listeners(event)
 
 	# This thread should never do any blocking calls
 	def handle(self):

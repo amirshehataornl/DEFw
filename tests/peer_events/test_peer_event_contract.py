@@ -30,6 +30,17 @@ def wait_for_peer_callability(defw_peers, peer_handle, callable_state):
 	raise AssertionError("peer callability did not reach expected state")
 
 
+def wait_for_listener_event(events, peer_handle, event_type):
+	deadline = time.time() + 2
+	while time.time() < deadline:
+		for event in events:
+			if event.get('peer_handle') == peer_handle and \
+			   event.get('event_type') == event_type:
+				return event
+		time.sleep(0.02)
+	raise AssertionError("peer lifecycle listener was not notified")
+
+
 def main():
 	cdefw_agent = importlib.import_module("cdefw_agent")
 	expect(cdefw_agent.DEFW_PEER_READY == 1,
@@ -70,6 +81,9 @@ def main():
 
 	peer_handle = f"peer-{uuid.uuid4()}"
 	runtime_id = f"runtime-{uuid.uuid4()}"
+	listener_events = []
+	listener = defw_workers.add_peer_event_listener(
+		lambda peer_event: listener_events.append(peer_event))
 	event = {
 		'event_type': 'PEER_READY',
 		'peer_handle': peer_handle,
@@ -88,8 +102,12 @@ def main():
 	}
 	defw_workers.put_peer_event(event)
 	dispatched = wait_for_peer_event(defw_workers, peer_handle)
+	listener_ready = wait_for_listener_event(
+		listener_events, peer_handle, 'PEER_READY')
 	expect(dispatched['event_type'] == 'PEER_READY',
 	       "wrong peer lifecycle event type")
+	expect(listener_ready is not event,
+	       "peer lifecycle listener received mutable internal event state")
 	expect(dispatched['endpoint']['hostname'] == 'localhost',
 	       "endpoint metadata was not preserved")
 	ready_peer = wait_for_peer_callability(defw_peers, peer_handle, True)
@@ -111,6 +129,8 @@ def main():
 	lost['timestamp'] = time.time() + 1
 	defw_workers.put_peer_event(lost)
 	wait_for_peer_callability(defw_peers, peer_handle, False)
+	wait_for_listener_event(listener_events, peer_handle, 'PEER_LOST')
+	defw_workers.remove_peer_event_listener(listener)
 	expect(defw.get_agent(target) is None,
 	       "get_agent returned a peer after PEER_LOST")
 
