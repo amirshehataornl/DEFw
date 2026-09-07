@@ -69,6 +69,15 @@ static void defw_agent_report_peer_lost(defw_agent_blk_t *agent,
 static void defw_agent_report_peer_removed(defw_agent_blk_t *agent,
 					   const char *reason);
 
+static void free_agent_blk(defw_agent_blk_t *agent)
+{
+	pthread_mutex_destroy(&agent->rpc_send_mutex);
+	pthread_mutex_destroy(&agent->control_send_mutex);
+	pthread_mutex_destroy(&agent->state_mutex);
+	memset(agent, 0xdeadbeef, sizeof(*agent));
+	free(agent);
+}
+
 static void count_lists(void)
 {
 	struct dlist_entry *tmp;
@@ -151,9 +160,7 @@ static void free_dead_agent_if_unreferenced(defw_agent_blk_t *agent)
 	if (agent->ref_count == 0) {
 		defw_agent_report_peer_removed(agent, "transport-cleanup");
 		agent->lifecycle = DEFW_CONN_LIFECYCLE_REMOVED;
-		pthread_mutex_destroy(&agent->state_mutex);
-		memset(agent, 0xdeadbeef, sizeof(*agent));
-		free(agent);
+		free_agent_blk(agent);
 	}
 }
 
@@ -360,25 +367,30 @@ static void defw_agent_report_peer_removed(defw_agent_blk_t *agent,
 	defw_notify_peer_event(&event);
 }
 
+static void close_agent_channel_unlocked(defw_agent_blk_t *agent, int *fd_ptr,
+					 pthread_mutex_t *send_mutex)
+{
+	int fd;
+
+	MUTEX_LOCK(send_mutex);
+	fd = *fd_ptr;
+	if (fd != INVALID_TCP_SOCKET) {
+		*fd_ptr = INVALID_TCP_SOCKET;
+		pthread_mutex_lock(&global_var_mutex);
+		FD_CLR(fd, &g_tAllSet);
+		g_iMaxSelectFd = defw_agent_get_highest_fd();
+		pthread_mutex_unlock(&global_var_mutex);
+		closeTcpConnection(fd);
+	}
+	MUTEX_UNLOCK(send_mutex);
+}
+
 static void close_agent_connection_unlocked(defw_agent_blk_t *agent)
 {
-	if (agent->iFileDesc != INVALID_TCP_SOCKET) {
-		pthread_mutex_lock(&global_var_mutex);
-		FD_CLR(agent->iFileDesc, &g_tAllSet);
-		g_iMaxSelectFd = defw_agent_get_highest_fd();
-		pthread_mutex_unlock(&global_var_mutex);
-		closeTcpConnection(agent->iFileDesc);
-		agent->iFileDesc = -1;
-	}
-	if (agent->iRpcFd != INVALID_TCP_SOCKET) {
-		pthread_mutex_lock(&global_var_mutex);
-		FD_CLR(agent->iRpcFd, &g_tAllSet);
-		g_iMaxSelectFd = defw_agent_get_highest_fd();
-		pthread_mutex_unlock(&global_var_mutex);
-		closeTcpConnection(agent->iRpcFd);
-		agent->iRpcFd = -1;
-	}
-
+	close_agent_channel_unlocked(agent, &agent->iFileDesc,
+				     &agent->control_send_mutex);
+	close_agent_channel_unlocked(agent, &agent->iRpcFd,
+				     &agent->rpc_send_mutex);
 }
 
 static void close_agent_connection(defw_agent_blk_t *agent)
@@ -420,9 +432,7 @@ void defw_release_agent_blk_unlocked(defw_agent_blk_t *agent, int dead)
 			defw_agent_report_peer_removed(agent,
 						       "transport-cleanup");
 		}
-		pthread_mutex_destroy(&agent->state_mutex);
-		memset(agent, 0xdeadbeef, sizeof(*agent));
-		free(agent);
+		free_agent_blk(agent);
 	} else if (dead) {
 		/* Remove the table-owned reference exactly once. Outstanding
 		 * users retain the unlinked block until they release it.
@@ -467,10 +477,8 @@ void defw_release_agent_conn(defw_agent_blk_t *agent)
 	}
 
 	MUTEX_UNLOCK(&agent->state_mutex);
-	if (free_agent) {
-		pthread_mutex_destroy(&agent->state_mutex);
-		free(agent);
-	}
+	if (free_agent)
+		free_agent_blk(agent);
 	MUTEX_UNLOCK(&agent_array_mutex);
 }
 
@@ -688,6 +696,8 @@ defw_agent_blk_t *defw_alloc_agent_blk(struct sockaddr_in *addr, bool add)
 
 	dlist_init(&agent->entry);
 	pthread_mutex_init(&agent->state_mutex, NULL);
+	pthread_mutex_init(&agent->control_send_mutex, NULL);
+	pthread_mutex_init(&agent->rpc_send_mutex, NULL);
 	gettimeofday(&agent->time_stamp, NULL);
 	agent->last_heartbeat_rx = agent->time_stamp;
 	agent->last_heartbeat_tx = agent->time_stamp;
@@ -1015,7 +1025,7 @@ static void *defw_connect_to_agent_thread(void *user_data)
 close:
 	close_agent_connection(agent);
 free_agent:
-	free(agent);
+	free_agent_blk(agent);
 fail:
 	free(user_data);
 	status_cb(rc, req_uuid);
@@ -1111,7 +1121,6 @@ defw_send(char *dst_uuid, char *blk_uuid, char *yaml, defw_msg_type_t type)
 
 	MUTEX_LOCK(&agent_blk->state_mutex);
 	if (!(agent_blk->state & DEFW_AGENT_RPC_CHANNEL_CONNECTED)) {
-		MUTEX_UNLOCK(&agent_blk->state_mutex);
 		PDEBUG("Establishing an RPC channel to agent %s:%s:%d",
 		       agent_blk->name,
 		       inet_ntoa(agent_blk->addr.sin_addr),
@@ -1123,19 +1132,20 @@ defw_send(char *dst_uuid, char *blk_uuid, char *yaml, defw_msg_type_t type)
 				agent_blk->addr.sin_addr.s_addr,
 				htons(agent_blk->listen_port),
 				false, false);
-		if (agent_blk->iRpcFd < 0)
+		if (agent_blk->iRpcFd < 0) {
+			MUTEX_UNLOCK(&agent_blk->state_mutex);
 			goto fail_rpc;
+		}
 		rc = defw_send_session_info(agent_blk, true);
 		if (rc) {
 			PERROR("Failed send session info: %s",
 				defw_rc2str(rc));
+			MUTEX_UNLOCK(&agent_blk->state_mutex);
 			goto fail_rpc;
 		}
-		set_agent_state(agent_blk,
-				DEFW_AGENT_RPC_CHANNEL_CONNECTED);
-	} else {
-		MUTEX_UNLOCK(&agent_blk->state_mutex);
+		agent_blk->state |= DEFW_AGENT_RPC_CHANNEL_CONNECTED;
 	}
+	MUTEX_UNLOCK(&agent_blk->state_mutex);
 
 	set_agent_state(agent_blk, DEFW_AGENT_WORK_IN_PROGRESS);
 

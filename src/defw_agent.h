@@ -89,6 +89,8 @@ typedef defw_rc_t (*defw_peer_event_cb)(const defw_peer_event_t *event);
 typedef struct defw_agent_blk_s {
 	struct dlist_entry entry;
 	pthread_mutex_t state_mutex;
+	pthread_mutex_t control_send_mutex;
+	pthread_mutex_t rpc_send_mutex;
 	pid_t pid;
 	defw_agent_uuid_t id;
 	unsigned int version;

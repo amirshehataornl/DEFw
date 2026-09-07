@@ -1,13 +1,17 @@
 #include <arpa/inet.h>
+#include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <uuid/uuid.h>
 
 #include "defw.h"
 #include "defw_agent.h"
 #include "defw_listener.h"
 #include "defw_print.h"
+#include "defw_transport.h"
 #include "libdefw_agent.h"
 
 static defw_peer_event_t peer_events[8];
@@ -66,6 +70,149 @@ static int expect(int condition, const char *message)
 		return 1;
 	}
 	return 0;
+}
+
+#define CONCURRENT_SEND_COUNT 32
+#define CONCURRENT_BODY_SIZE (64 * 1024)
+
+struct concurrent_sender {
+	defw_agent_blk_t *agent;
+	pthread_barrier_t *barrier;
+	char fill;
+	defw_rc_t rc;
+};
+
+static int receive_all(int fd, void *buffer, size_t size)
+{
+	char *cursor = buffer;
+
+	while (size > 0) {
+		ssize_t received = read(fd, cursor, size);
+
+		if (received == 0)
+			return -1;
+		if (received < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		cursor += received;
+		size -= received;
+	}
+
+	return 0;
+}
+
+static void *send_concurrent_messages(void *argument)
+{
+	struct concurrent_sender *sender = argument;
+	char *body;
+	int index;
+
+	body = malloc(CONCURRENT_BODY_SIZE);
+	if (!body) {
+		sender->rc = EN_DEFW_RC_OOM;
+		return NULL;
+	}
+	memset(body, sender->fill, CONCURRENT_BODY_SIZE);
+	pthread_barrier_wait(sender->barrier);
+
+	for (index = 0; index < CONCURRENT_SEND_COUNT; index++) {
+		sender->rc = defw_transport_tcp_ops()->send(
+			sender->agent, EN_DEFW_CHANNEL_RPC, body,
+			CONCURRENT_BODY_SIZE, EN_MSG_TYPE_PY_RESPONSE);
+		if (sender->rc != EN_DEFW_RC_OK)
+			break;
+	}
+
+	free(body);
+	return NULL;
+}
+
+static int test_concurrent_sends_preserve_frames(void)
+{
+	struct concurrent_sender senders[2];
+	pthread_barrier_t barrier;
+	pthread_t threads[2];
+	defw_message_hdr_t header;
+	defw_agent_blk_t *agent;
+	char *body;
+	int sockets[2];
+	int send_buffer_size = 1024;
+	int index;
+	int rc = 0;
+
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets))
+		return 1;
+	setsockopt(sockets[0], SOL_SOCKET, SO_SNDBUF, &send_buffer_size,
+		   sizeof(send_buffer_size));
+
+	agent = make_agent("127.0.0.1", 41005,
+			   DEFW_CONN_DIRECTION_OUTBOUND, EN_DEFW_SERVICE,
+			   "concurrent-peer");
+	if (!agent) {
+		close(sockets[0]);
+		close(sockets[1]);
+		return 1;
+	}
+	agent->iRpcFd = sockets[0];
+	body = malloc(CONCURRENT_BODY_SIZE);
+	if (!body) {
+		release_agent(agent);
+		close(sockets[1]);
+		return 1;
+	}
+
+	pthread_barrier_init(&barrier, NULL, 3);
+	memset(senders, 0, sizeof(senders));
+	for (index = 0; index < 2; index++) {
+		senders[index].agent = agent;
+		senders[index].barrier = &barrier;
+		senders[index].fill = index ? 'B' : 'A';
+		pthread_create(&threads[index], NULL, send_concurrent_messages,
+			       &senders[index]);
+	}
+	pthread_barrier_wait(&barrier);
+
+	for (index = 0; index < 2 * CONCURRENT_SEND_COUNT; index++) {
+		char fill;
+		size_t offset;
+
+		if (receive_all(sockets[1], &header, sizeof(header)) ||
+		    receive_all(sockets[1], body, CONCURRENT_BODY_SIZE)) {
+			rc |= expect(0, "concurrent send stream ended early");
+			break;
+		}
+		rc |= expect(ntohl(header.version) == DEFW_VERSION_NUMBER,
+			     "concurrent send corrupted a frame version");
+		rc |= expect(ntohl(header.type) == EN_MSG_TYPE_PY_RESPONSE,
+			     "concurrent send corrupted a frame type");
+		rc |= expect(ntohl(header.len) == CONCURRENT_BODY_SIZE,
+			     "concurrent send corrupted a frame length");
+		fill = body[0];
+		rc |= expect(fill == 'A' || fill == 'B',
+			     "concurrent send corrupted a frame body");
+		for (offset = 1; offset < CONCURRENT_BODY_SIZE; offset++) {
+			if (body[offset] != fill) {
+				rc |= expect(0,
+					     "concurrent send interleaved frame bodies");
+				break;
+			}
+		}
+	}
+
+	if (rc)
+		shutdown(sockets[1], SHUT_RDWR);
+	for (index = 0; index < 2; index++) {
+		pthread_join(threads[index], NULL);
+		rc |= expect(senders[index].rc == EN_DEFW_RC_OK,
+			     "concurrent sender failed");
+	}
+	pthread_barrier_destroy(&barrier);
+	free(body);
+	release_agent(agent);
+	close(sockets[1]);
+	return rc;
 }
 
 struct collected_agents {
@@ -220,6 +367,8 @@ int main(void)
 	if (test_peer_ready_identity_update())
 		return 1;
 	if (test_dead_peer_retains_outstanding_reference())
+		return 1;
+	if (test_concurrent_sends_preserve_frames())
 		return 1;
 	if (test_send_rejects_invalid_arguments())
 		return 1;
