@@ -97,7 +97,6 @@ defw_agent_blk_t *defw_find_agent_by_blk_uuid(char *blk_uuid_str);
 defw_rc_t defw_send_rma_ack(defw_agent_blk_t *agent, uint64_t handle);
 void defw_move_to_client_list(defw_agent_blk_t *agent);
 void defw_move_to_service_list(defw_agent_blk_t *agent);
-void defw_release_dead_list_agents(void);
 void defw_new_agent_iter(process_agent cb, void *user_data);
 void defw_connection_agent_iter(process_agent cb, void *user_data);
 

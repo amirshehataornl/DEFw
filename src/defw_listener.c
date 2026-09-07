@@ -861,8 +861,6 @@ static void *defw_listener_main(void *usr_data)
 
 		//PDEBUG("iNReady == %d, g_iMaxSelectFd %d\n", iNReady, g_iMaxSelectFd);
 
-		defw_release_dead_list_agents();
-
 		/* Everyone registers with the dirsvc, even the dirsvc
 		 * registers with itself
 		 */

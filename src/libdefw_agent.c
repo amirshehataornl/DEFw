@@ -151,32 +151,10 @@ static void free_dead_agent_if_unreferenced(defw_agent_blk_t *agent)
 	if (agent->ref_count == 0) {
 		defw_agent_report_peer_removed(agent, "transport-cleanup");
 		agent->lifecycle = DEFW_CONN_LIFECYCLE_REMOVED;
-		dlist_remove(&agent->entry);
+		pthread_mutex_destroy(&agent->state_mutex);
 		memset(agent, 0xdeadbeef, sizeof(*agent));
 		free(agent);
 	}
-}
-
-static void del_dead_agent_locked(defw_agent_blk_t *agent)
-{
-	assert(agent && agent->state & DEFW_AGENT_STATE_DEAD);
-
-	assert(agent->ref_count > 0);
-	agent->ref_count--;
-	free_dead_agent_if_unreferenced(agent);
-}
-
-void defw_release_dead_list_agents(void)
-{
-	struct dlist_entry *tmp;
-	defw_agent_blk_t *agent;
-
-	MUTEX_LOCK(&agent_array_mutex);
-	dlist_foreach_container_safe(&agent_connection_table, defw_agent_blk_t, agent,
-				     entry, tmp)
-		if (agent->state & DEFW_AGENT_STATE_DEAD)
-			del_dead_agent_locked(agent);
-	MUTEX_UNLOCK(&agent_array_mutex);
 }
 
 static inline bool defw_agent_alive(defw_agent_blk_t *agent)
@@ -424,7 +402,7 @@ void defw_release_agent_blk_unlocked(defw_agent_blk_t *agent, int dead)
 	}
 
 	if (agent->ref_count == 0) {
-		dlist_remove(&agent->entry);
+		dlist_remove_init(&agent->entry);
 		assert(!(agent->state & DEFW_AGENT_WORK_IN_PROGRESS));
 		/* a new agent represents a connection which we don't
 		 * exactly know if it's from an agent we have previous
@@ -442,10 +420,13 @@ void defw_release_agent_blk_unlocked(defw_agent_blk_t *agent, int dead)
 			defw_agent_report_peer_removed(agent,
 						       "transport-cleanup");
 		}
+		pthread_mutex_destroy(&agent->state_mutex);
 		memset(agent, 0xdeadbeef, sizeof(*agent));
 		free(agent);
 	} else if (dead) {
-		/* remove from the live list and put on the dead list */
+		/* Remove the table-owned reference exactly once. Outstanding
+		 * users retain the unlinked block until they release it.
+		 */
 		set_agent_state(agent, DEFW_AGENT_STATE_DEAD);
 		unset_agent_state(agent, DEFW_AGENT_STATE_ALIVE);
 		unset_agent_state(agent, DEFW_AGENT_RPC_CHANNEL_CONNECTED);
@@ -454,7 +435,11 @@ void defw_release_agent_blk_unlocked(defw_agent_blk_t *agent, int dead)
 					    agent->failure_reason[0] ?
 					    agent->failure_reason :
 					    "transport-failure");
+		dlist_remove_init(&agent->entry);
+		assert(agent->ref_count > 0);
+		agent->ref_count--;
 		close_agent_connection_unlocked(agent);
+		free_dead_agent_if_unreferenced(agent);
 	}
 }
 
@@ -467,6 +452,8 @@ void defw_release_agent_blk(defw_agent_blk_t *agent, int dead)
 
 void defw_release_agent_conn(defw_agent_blk_t *agent)
 {
+	bool free_agent = false;
+
 	MUTEX_LOCK(&agent_array_mutex);
 	MUTEX_LOCK(&agent->state_mutex);
 
@@ -475,11 +462,15 @@ void defw_release_agent_conn(defw_agent_blk_t *agent)
 	agent->ref_count--;
 
 	if (agent->ref_count == 0) {
-		dlist_remove(&agent->entry);
-		free(agent);
+		dlist_remove_init(&agent->entry);
+		free_agent = true;
 	}
 
 	MUTEX_UNLOCK(&agent->state_mutex);
+	if (free_agent) {
+		pthread_mutex_destroy(&agent->state_mutex);
+		free(agent);
+	}
 	MUTEX_UNLOCK(&agent_array_mutex);
 }
 
@@ -1163,7 +1154,6 @@ defw_send(char *dst_uuid, char *blk_uuid, char *yaml, defw_msg_type_t type)
 fail_rpc:
 	unset_agent_state(agent_blk, DEFW_AGENT_WORK_IN_PROGRESS);
 	if (rc == EN_DEFW_RC_SOCKET_FAIL) {
-		set_agent_state(agent_blk, DEFW_AGENT_STATE_DEAD);
 		defw_release_agent_blk(agent_blk, true);
 	} else {
 		defw_release_agent_blk(agent_blk, false);

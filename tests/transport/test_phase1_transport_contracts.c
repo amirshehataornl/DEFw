@@ -157,6 +157,38 @@ static int test_peer_ready_identity_update(void)
 	return rc;
 }
 
+static int test_dead_peer_retains_outstanding_reference(void)
+{
+	defw_agent_blk_t *agent;
+	struct collected_agents collected = { 0 };
+	int rc = 0;
+
+	agent = make_agent("127.0.0.1", 41004,
+			   DEFW_CONN_DIRECTION_INBOUND, EN_DEFW_AGENT,
+			   "short-lived-client");
+	if (!agent)
+		return 1;
+
+	/* Model the table reference plus two concurrent users. The first user
+	 * detects the disconnect and releases both itself and table ownership.
+	 */
+	acquire_agent_blk(agent);
+	acquire_agent_blk(agent);
+	defw_release_agent_blk(agent, true);
+
+	rc |= expect(agent->ref_count == 1,
+		     "dead peer consumed an outstanding user reference");
+	rc |= expect(agent->state & DEFW_AGENT_STATE_DEAD,
+		     "disconnected peer was not marked dead");
+	defw_connection_agent_iter(collect_agent, &collected);
+	rc |= expect(collected.count == 0,
+		     "dead peer remained discoverable in the connection table");
+
+	/* The final user release owns destruction of the unlinked peer. */
+	defw_release_agent_blk(agent, false);
+	return rc;
+}
+
 static int test_send_rejects_invalid_arguments(void)
 {
 	char uuid[] = "00000000-0000-0000-0000-000000000000";
@@ -186,6 +218,8 @@ int main(void)
 	if (test_connection_table_iteration_order())
 		return 1;
 	if (test_peer_ready_identity_update())
+		return 1;
+	if (test_dead_peer_retains_outstanding_reference())
 		return 1;
 	if (test_send_rejects_invalid_arguments())
 		return 1;
