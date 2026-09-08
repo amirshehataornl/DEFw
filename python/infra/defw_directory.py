@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+import uuid
 
 from defw_exception import DEFwError, DEFwNotFound
 
@@ -11,6 +12,16 @@ STATE_TIMED_OUT = 'TIMED_OUT'
 STATE_DEREGISTERED = 'DEREGISTERED'
 DEFAULT_RETENTION_SECONDS = 300
 QPM_SERVICE_TYPE = 'qfw.qpm'
+SERVICE_CONNECTED = 'SERVICE_CONNECTED'
+SERVICE_DISCONNECTED = 'SERVICE_DISCONNECTED'
+SERVICE_EVENT_TYPES = frozenset({
+	SERVICE_CONNECTED,
+	SERVICE_DISCONNECTED,
+})
+SERVICE_EVENT_FILTERS = frozenset({
+	'service_id',
+	'service_type',
+})
 QPM_CATALOG_PROPERTIES = frozenset({
 	'backend',
 	'controller_target_id',
@@ -89,12 +100,26 @@ def _bits_match(record_bits, requested_bits):
 	return (requested_bits & record_bits) == requested_bits
 
 
+def _local_runtime_id():
+	try:
+		import defw
+		return str(defw.me.my_endpoint().get_id())
+	except Exception:
+		return ''
+
+
 class Directory:
-	def __init__(self, retention_seconds=DEFAULT_RETENTION_SECONDS):
+	def __init__(self, retention_seconds=DEFAULT_RETENTION_SECONDS,
+		     runtime_id_provider=None):
 		self.__records = {}
 		self.__lock = threading.Lock()
+		self.__transition_lock = threading.Lock()
 		self.__retention_seconds = retention_seconds
 		self.__lifecycle_listeners = []
+		self.__event_registrations = {}
+		self.__event_lock = threading.Lock()
+		self.__runtime_id_provider = \
+			runtime_id_provider or _local_runtime_id
 
 	def add_lifecycle_listener(self, listener):
 		if not callable(listener):
@@ -109,49 +134,94 @@ class Directory:
 			if listener in self.__lifecycle_listeners:
 				self.__lifecycle_listeners.remove(listener)
 
+	def register_event_notification(self, callback, event_type,
+					    subscriber_runtime_id, filters=None):
+		if event_type not in SERVICE_EVENT_TYPES:
+			raise DEFwError(
+				f"Unsupported directory event type {event_type!r}")
+		if not subscriber_runtime_id:
+			raise DEFwError(
+				"Directory event registration missing subscriber runtime ID")
+		if callback is None or not callable(getattr(callback, 'put', None)):
+			raise DEFwError("Directory event callback must expose put(event)")
+		filters = dict(filters or {})
+		unsupported = sorted(set(filters) - SERVICE_EVENT_FILTERS)
+		if unsupported:
+			raise DEFwError(
+				"Unsupported directory event filters: "
+				f"{', '.join(unsupported)}")
+		registration_id = str(uuid.uuid4())
+		registration = {
+			'registration_id': registration_id,
+			'event_type': event_type,
+			'subscriber_runtime_id': str(subscriber_runtime_id),
+			'callback': callback,
+			'filters': filters,
+		}
+		with self.__event_lock:
+			self.__event_registrations.setdefault(
+				event_type, {})[registration_id] = registration
+		return registration_id
+
+	def unregister_event_notification(self, registration_id):
+		with self.__event_lock:
+			for registrations in self.__event_registrations.values():
+				if registrations.pop(registration_id, None) is not None:
+					return True
+		return False
+
 	def register_service(self, record, peer=None):
-		now = time.time()
-		service_id = record.get('service_id') or record.get('name')
-		if not service_id:
-			raise DEFwError("Directory registration missing service_id")
+		with self.__transition_lock:
+			now = time.time()
+			service_id = record.get('service_id') or record.get('name')
+			if not service_id:
+				raise DEFwError("Directory registration missing service_id")
 
-		peer = peer or {}
-		runtime_id = record.get('runtime_id') or peer.get('runtime_id')
-		peer_handle = record.get('peer_handle') or peer.get('peer_handle')
-		if not runtime_id or not peer_handle:
-			raise DEFwError("Directory registration missing peer binding")
+			peer = peer or {}
+			runtime_id = record.get('runtime_id') or peer.get('runtime_id')
+			peer_handle = record.get('peer_handle') or peer.get('peer_handle')
+			if not runtime_id or not peer_handle:
+				raise DEFwError(
+					"Directory registration missing peer binding")
 
-		previous_generation = None
-		with self.__lock:
-			current = self.__records.get(service_id)
-			if current and current['state'] == STATE_UP:
-				if current['runtime_id'] != runtime_id:
-					raise DEFwError(
-						f"service_id {service_id} already has a live runtime"
-					)
-				generation = current['generation']
-			elif current:
-				previous_generation = current['generation']
-				generation = current['generation'] + 1
-			else:
-				generation = 1
+			previous_generation = None
+			became_active = False
+			with self.__lock:
+				current = self.__records.get(service_id)
+				if current and current['state'] == STATE_UP:
+					if current['runtime_id'] != runtime_id:
+						raise DEFwError(
+							f"service_id {service_id} already has a live "
+							"runtime")
+					generation = current['generation']
+				else:
+					became_active = True
+					if current:
+						previous_generation = current['generation']
+						generation = current['generation'] + 1
+					else:
+						generation = 1
 
-			properties = _catalog_properties(record)
-			qpm_type = _record_value(record, 'qpm_type')
-			qpm_capabilities = _record_value(record, 'qpm_capabilities')
-			if qpm_type != -1:
-				properties.setdefault('qpm_type', qpm_type)
-			if qpm_capabilities != -1:
-				properties.setdefault(
-					'qpm_capabilities', qpm_capabilities)
-			registered = {
-				'service_id': service_id,
-				'service_name': record.get('service_name') or service_id,
-				'service_type': record.get('service_type', 'defw.service'),
-				'runtime_id': runtime_id,
-				'peer_handle': peer_handle,
-				'generation': generation,
-					'endpoint': dict(record.get('endpoint') or peer.get('endpoint') or {}),
+				properties = _catalog_properties(record)
+				qpm_type = _record_value(record, 'qpm_type')
+				qpm_capabilities = _record_value(
+					record, 'qpm_capabilities')
+				if qpm_type != -1:
+					properties.setdefault('qpm_type', qpm_type)
+				if qpm_capabilities != -1:
+					properties.setdefault(
+						'qpm_capabilities', qpm_capabilities)
+				registered = {
+					'service_id': service_id,
+					'service_name': record.get('service_name') or service_id,
+					'service_type': record.get(
+						'service_type', 'defw.service'),
+					'runtime_id': runtime_id,
+					'peer_handle': peer_handle,
+					'generation': generation,
+					'endpoint': dict(
+						record.get('endpoint') or
+						peer.get('endpoint') or {}),
 					'api_bindings': _normalize_bindings(record),
 					'selector': dict(record.get('selector') or {}),
 					'properties': properties,
@@ -161,36 +231,46 @@ class Directory:
 					'state': STATE_UP,
 					'last_seen': now,
 					'state_changed_at': now,
-				'down_reason': '',
-				'retention_deadline': None,
-			}
-			self.__records[service_id] = registered
-			registered = _copy_record(registered)
+					'down_reason': '',
+					'retention_deadline': None,
+				}
+				self.__records[service_id] = registered
+				registered = _copy_record(registered)
 
-		details = {}
-		if previous_generation is not None:
-			details['previous_generation'] = previous_generation
-		self.__notify_lifecycle(
-			'registration', service_record=registered,
-			details=details)
-		return registered
+			details = {}
+			if previous_generation is not None:
+				details['previous_generation'] = previous_generation
+			self.__notify_lifecycle(
+				'registration', service_record=registered,
+				details=details)
+			if became_active:
+				self.__publish_service_event(
+					SERVICE_CONNECTED, registered)
+			return registered
 
 	def deregister_service(self, service_id, runtime_id, generation):
-		now = time.time()
-		with self.__lock:
-			record = self.__records.get(service_id)
-			if not record:
-				raise DEFwNotFound(f"service_id {service_id} not registered")
-			if record['runtime_id'] != runtime_id or \
-			   record['generation'] != generation:
-				raise DEFwError("stale deregistration request")
-			record['state'] = STATE_DEREGISTERED
-			record['endpoint'] = {}
-			record['state_changed_at'] = now
-			record['retention_deadline'] = now + self.__retention_seconds
-			record = _copy_record(record)
-		self.__notify_lifecycle('deregistration', service_record=record)
-		return record
+		with self.__transition_lock:
+			now = time.time()
+			with self.__lock:
+				record = self.__records.get(service_id)
+				if not record:
+					raise DEFwNotFound(
+						f"service_id {service_id} not registered")
+				if record['runtime_id'] != runtime_id or \
+				   record['generation'] != generation:
+					raise DEFwError("stale deregistration request")
+				record['state'] = STATE_DEREGISTERED
+				record['endpoint'] = {}
+				record['state_changed_at'] = now
+				record['retention_deadline'] = \
+					now + self.__retention_seconds
+				record = _copy_record(record)
+			self.__notify_lifecycle(
+				'deregistration', service_record=record)
+			self.__publish_service_event(
+				SERVICE_DISCONNECTED, record,
+				reason='deregistered')
+			return record
 
 	def apply_peer_event(self, event):
 		event_type = event.get('event_type')
@@ -198,38 +278,47 @@ class Directory:
 		runtime_id = event.get('remote_runtime_id') or event.get('runtime_id')
 		now = event.get('timestamp', time.time())
 		notifications = []
-		with self.__lock:
-			for record in self.__records.values():
-				if record['peer_handle'] != peer_handle:
-					continue
-				if runtime_id and record['runtime_id'] != runtime_id:
-					continue
-				if now < record['last_seen']:
-					continue
-				record['last_seen'] = now
-				if event_type == 'PEER_LOST':
-					reason = event.get('reason', '')
-					record['state'] = STATE_TIMED_OUT \
-						if reason == 'heartbeat-timeout' else STATE_DOWN
-					record['down_reason'] = reason
-					record['state_changed_at'] = now
-					record['retention_deadline'] = \
-						now + self.__retention_seconds
-					notifications.append((
-						'peer-lost', _copy_record(record), reason))
-				elif event_type == 'PEER_READY' and \
-				     record['state'] in (STATE_DOWN, STATE_TIMED_OUT):
-					record['state'] = STATE_UP
-					record['down_reason'] = ''
-					record['state_changed_at'] = now
-					record['retention_deadline'] = None
-					notifications.append((
-						'peer-ready', _copy_record(record),
-						event.get('reason', '')))
-		for lifecycle_event, record, reason in notifications:
-			self.__notify_lifecycle(
-				lifecycle_event, service_record=record,
-				peer_event=event, reason=reason)
+		with self.__transition_lock:
+			if event_type in ('PEER_LOST', 'PEER_REMOVED') and runtime_id:
+				self.__remove_subscriber(runtime_id)
+			with self.__lock:
+				for record in self.__records.values():
+					if record['peer_handle'] != peer_handle:
+						continue
+					if runtime_id and record['runtime_id'] != runtime_id:
+						continue
+					if now < record['last_seen']:
+						continue
+					record['last_seen'] = now
+					if event_type in ('PEER_LOST', 'PEER_REMOVED'):
+						reason = event.get('reason', '') or \
+							'peer-removed'
+						record['state'] = STATE_TIMED_OUT \
+							if reason == 'heartbeat-timeout' else STATE_DOWN
+						record['down_reason'] = reason
+						record['state_changed_at'] = now
+						record['retention_deadline'] = \
+							now + self.__retention_seconds
+						notifications.append((
+							'peer-lost', _copy_record(record), reason))
+					elif event_type == 'PEER_READY' and \
+					     record['state'] in (STATE_DOWN, STATE_TIMED_OUT):
+						record['state'] = STATE_UP
+						record['down_reason'] = ''
+						record['state_changed_at'] = now
+						record['retention_deadline'] = None
+						notifications.append((
+							'peer-ready', _copy_record(record),
+							event.get('reason', '')))
+			for lifecycle_event, record, reason in notifications:
+				self.__notify_lifecycle(
+					lifecycle_event, service_record=record,
+					peer_event=event, reason=reason)
+				service_event = SERVICE_CONNECTED \
+					if lifecycle_event == 'peer-ready' \
+					else SERVICE_DISCONNECTED
+				self.__publish_service_event(
+					service_event, record, reason=reason)
 
 	def resolve_services(self, **filters):
 		self.purge_expired()
@@ -263,12 +352,14 @@ class Directory:
 		purged = []
 		with self.__lock:
 			expired = [
-				service_id for service_id, record in self.__records.items()
+				service_id
+				for service_id, record in self.__records.items()
 				if record['retention_deadline'] and
 				record['retention_deadline'] <= now
 			]
 			for service_id in expired:
-				purged.append(_copy_record(self.__records[service_id]))
+				purged.append(
+					_copy_record(self.__records[service_id]))
 				del self.__records[service_id]
 		for record in purged:
 			self.__notify_lifecycle(
@@ -343,6 +434,52 @@ class Directory:
 				logging.exception(
 					"Directory lifecycle listener failed")
 
+	def __remove_subscriber(self, runtime_id):
+		with self.__event_lock:
+			for event_type in list(self.__event_registrations):
+				registrations = self.__event_registrations[event_type]
+				for registration_id in list(registrations):
+					registration = registrations[registration_id]
+					if registration['subscriber_runtime_id'] == runtime_id:
+						del registrations[registration_id]
+				if not registrations:
+					del self.__event_registrations[event_type]
+
+	def __publish_service_event(self, event_type, record, reason=''):
+		with self.__event_lock:
+			registrations = [
+				dict(registration)
+				for registration in self.__event_registrations.get(
+					event_type, {}).values()
+				if self.__event_matches(
+					registration.get('filters', {}), record)
+			]
+		if not registrations:
+			return
+		event = {
+			'event': event_type,
+			'directory_runtime_id': str(self.__runtime_id_provider()),
+			'service_id': record['service_id'],
+			'service_type': record['service_type'],
+			'runtime_id': record['runtime_id'],
+			'peer_handle': record['peer_handle'],
+		}
+		if event_type == SERVICE_CONNECTED:
+			event['service_record'] = _copy_record(record)
+		else:
+			event['reason'] = reason or record.get('down_reason', '')
+		for registration in registrations:
+			try:
+				registration['callback'].put(dict(event))
+			except Exception:
+				logging.exception(
+					"Directory service lifecycle callback failed")
+
+	def __event_matches(self, filters, record):
+		return all(
+			not value or record.get(field) == value
+			for field, value in filters.items())
+
 
 directory = Directory()
 
@@ -381,3 +518,13 @@ def purge_expired(now=None):
 
 def get_service_generation(service_id):
 	return directory.get_service_generation(service_id)
+
+
+def register_event_notification(callback, event_type,
+					subscriber_runtime_id, filters=None):
+	return directory.register_event_notification(
+		callback, event_type, subscriber_runtime_id, filters=filters)
+
+
+def unregister_event_notification(registration_id):
+	return directory.unregister_event_notification(registration_id)

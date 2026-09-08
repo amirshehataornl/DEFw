@@ -10,6 +10,7 @@ from defw_exception import (
 	DEFwAgentNotFound,
 	DEFwError,
 )
+from api_events import BaseEventAPI
 import defw_directory
 
 
@@ -189,6 +190,19 @@ class DEFwDirSvc:
 
 	def get_service_generation(self, service_id):
 		return defw_directory.get_service_generation(service_id)
+
+	def register_event_notification(self, endpoint, event_type, class_id,
+					filters=None):
+		callback = BaseEventAPI(class_id=class_id, target=endpoint)
+		return defw_directory.register_event_notification(
+			callback,
+			event_type,
+			endpoint.get_id(),
+			filters=filters,
+		)
+
+	def unregister_event_notification(self, registration_id):
+		return defw_directory.unregister_event_notification(registration_id)
 
 	def query(self):
 		from . import SERVICE_DESC, SERVICE_NAME

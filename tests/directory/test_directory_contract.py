@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import threading
 import time
 
 import defw_directory
@@ -20,9 +21,9 @@ def expect_raises(exc_type, func, *args, **kwargs):
 
 
 def make_record(runtime_id='runtime-1', peer_handle='peer-1',
-		properties=None):
+		properties=None, service_id='qpm-iqm-ornl'):
 	record = {
-		'service_id': 'qpm-iqm-ornl',
+		'service_id': service_id,
 		'service_name': 'IQM QPM',
 		'service_type': 'qfw.qpm',
 		'runtime_id': runtime_id,
@@ -63,8 +64,172 @@ def make_record(runtime_id='runtime-1', peer_handle='peer-1',
 	return record
 
 
+class EventCallback:
+	def __init__(self):
+		self.events = []
+
+	def put(self, event):
+		self.events.append(dict(event))
+
+
+class BlockingEventCallback:
+	def __init__(self):
+		self.entered = threading.Event()
+		self.release = threading.Event()
+
+	def put(self, _event):
+		self.entered.set()
+		self.release.wait(timeout=2)
+
+
+def test_service_event_contract():
+	directory = defw_directory.Directory(
+		retention_seconds=10,
+		runtime_id_provider=lambda: 'directory-runtime-1',
+	)
+	connected = EventCallback()
+	disconnected = EventCallback()
+	connected_id = directory.register_event_notification(
+		connected,
+		defw_directory.SERVICE_CONNECTED,
+		'client-runtime-1',
+		filters={'service_id': 'qpm-iqm-ornl'},
+	)
+	disconnected_id = directory.register_event_notification(
+		disconnected,
+		defw_directory.SERVICE_DISCONNECTED,
+		'client-runtime-1',
+		filters={'service_type': 'qfw.qpm'},
+	)
+	expect_raises(
+		DEFwError,
+		directory.register_event_notification,
+		connected,
+		'UNKNOWN_EVENT',
+		'client-runtime-1',
+	)
+	expect_raises(
+		DEFwError,
+		directory.register_event_notification,
+		connected,
+		defw_directory.SERVICE_CONNECTED,
+		'client-runtime-1',
+		filters={'provider': 'iqm'},
+	)
+
+	registered = directory.register_service(make_record())
+	expect(len(connected.events) == 1,
+	       'initial registration did not publish a connected event')
+	event = connected.events[0]
+	expect(event['event'] == defw_directory.SERVICE_CONNECTED,
+	       'connected event type is incorrect')
+	expect(event['directory_runtime_id'] == 'directory-runtime-1',
+	       'connected event lacks directory runtime identity')
+	expect(event['runtime_id'] == 'runtime-1',
+	       'connected event lacks service runtime identity')
+	expect(event['peer_handle'] == 'peer-1',
+	       'connected event lacks peer identity')
+	expect(event['service_record']['generation'] == 1,
+	       'connected event lacks the active service record')
+
+	directory.register_service(make_record())
+	expect(len(connected.events) == 1,
+	       'duplicate active registration published another event')
+	lost_at = time.time()
+	directory.apply_peer_event({
+		'event_type': 'PEER_LOST',
+		'peer_handle': 'peer-1',
+		'remote_runtime_id': 'runtime-1',
+		'reason': 'socket-close',
+		'timestamp': lost_at,
+	})
+	expect(len(disconnected.events) == 1,
+	       'peer loss did not publish a disconnected event')
+	event = disconnected.events[0]
+	expect(event['event'] == defw_directory.SERVICE_DISCONNECTED,
+	       'disconnected event type is incorrect')
+	expect(event['reason'] == 'socket-close',
+	       'disconnected event lacks the peer-loss reason')
+
+	directory.register_service(make_record(
+		runtime_id='runtime-2', peer_handle='peer-2'))
+	expect(len(connected.events) == 2,
+	       'replacement runtime did not publish a connected event')
+	directory.apply_peer_event({
+		'event_type': 'PEER_LOST',
+		'peer_handle': 'peer-1',
+		'remote_runtime_id': 'runtime-1',
+		'reason': 'delayed-old-loss',
+		'timestamp': lost_at + 2,
+	})
+	expect(len(disconnected.events) == 1,
+	       'old runtime loss invalidated the replacement')
+
+	expect(directory.unregister_event_notification(connected_id),
+	       'connected registration was not removed')
+	expect(directory.unregister_event_notification(disconnected_id),
+	       'disconnected registration was not removed')
+	expect(not directory.unregister_event_notification(disconnected_id),
+	       'repeated unregistration should be idempotent')
+
+
+def test_subscriber_cleanup():
+	directory = defw_directory.Directory(
+		runtime_id_provider=lambda: 'directory-runtime-1')
+	callback = EventCallback()
+	directory.register_event_notification(
+		callback,
+		defw_directory.SERVICE_CONNECTED,
+		'client-runtime-1',
+	)
+	directory.apply_peer_event({
+		'event_type': 'PEER_LOST',
+		'peer_handle': 'client-peer-1',
+		'remote_runtime_id': 'client-runtime-1',
+		'reason': 'socket-close',
+		'timestamp': time.time(),
+	})
+	directory.register_service(make_record())
+	expect(callback.events == [],
+	       'lost subscriber retained its callback registration')
+
+
+def test_callback_delivery_does_not_block_queries():
+	directory = defw_directory.Directory(
+		runtime_id_provider=lambda: 'directory-runtime-1')
+	callback = BlockingEventCallback()
+	directory.register_event_notification(
+		callback,
+		defw_directory.SERVICE_CONNECTED,
+		'client-runtime-1',
+	)
+	thread = threading.Thread(
+		target=directory.register_service,
+		args=(make_record(),),
+	)
+	thread.start()
+	expect(callback.entered.wait(timeout=1),
+	       'blocking callback was not invoked')
+	started = time.monotonic()
+	matches = directory.resolve_services(service_type='qfw.qpm')
+	elapsed = time.monotonic() - started
+	callback.release.set()
+	thread.join(timeout=1)
+	expect(len(matches) == 2,
+	       'directory query did not return both API bindings')
+	expect(elapsed < 0.5,
+	       'remote callback held the directory record lock')
+	expect(not thread.is_alive(), 'callback delivery thread did not finish')
+
+
 def main():
-	directory = defw_directory.Directory(retention_seconds=0.01)
+	test_service_event_contract()
+	test_subscriber_cleanup()
+	test_callback_delivery_does_not_block_queries()
+	directory = defw_directory.Directory(
+		retention_seconds=0.01,
+		runtime_id_provider=lambda: 'directory-runtime-1',
+	)
 	lifecycle_events = []
 
 	def record_lifecycle(event_type, service_record=None, peer_event=None,
