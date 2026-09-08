@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import importlib
+import threading
 import time
 import uuid
 
@@ -133,6 +134,38 @@ def main():
 	defw_workers.remove_peer_event_listener(listener)
 	expect(defw.get_agent(target) is None,
 	       "get_agent returned a peer after PEER_LOST")
+
+	# Directory peer processing may synchronously notify remote subscribers.
+	# It must not run on the sole worker that dispatches the corresponding RPC
+	# response.
+	defw_directory = importlib.import_module("defw_directory")
+	original_apply_peer_event = defw_directory.apply_peer_event
+	entered = threading.Event()
+	release = threading.Event()
+
+	def blocking_apply_peer_event(_event):
+		entered.set()
+		release.wait(timeout=2)
+
+	defw_directory.apply_peer_event = blocking_apply_peer_event
+	async_peer_handle = f"peer-{uuid.uuid4()}"
+	async_event = dict(event)
+	async_event.update({
+		'peer_handle': async_peer_handle,
+		'remote_runtime_id': f"runtime-{uuid.uuid4()}",
+		'timestamp': time.time() + 2,
+	})
+	try:
+		started = time.monotonic()
+		defw_workers.worker_thread.handle_peer_event(async_event)
+		elapsed = time.monotonic() - started
+		expect(elapsed < 0.5,
+		       "directory lifecycle processing blocked the DEFw worker")
+		expect(entered.wait(timeout=1),
+		       "directory lifecycle processing was not dispatched")
+	finally:
+		release.set()
+		defw_directory.apply_peer_event = original_apply_peer_event
 
 
 if __name__ == "__main__":

@@ -382,7 +382,11 @@ class WorkerThread:
 		import defw_directory
 
 		peer_record = defw_peers.apply_event(event)
-		defw_directory.apply_peer_event(event)
+		# Directory lifecycle processing can publish a synchronous remote
+		# callback.  Keep it off this worker: callback responses are dispatched
+		# here, so waiting for one from this thread deadlocks all DEFw RPCs.
+		self.spawn_temporary_worker(
+			defw_directory.apply_peer_event, dict(event))
 		with peer_events_lock:
 			peer_events.append(event)
 		logging.defw_worker(f"Recorded peer lifecycle event: {event}")
