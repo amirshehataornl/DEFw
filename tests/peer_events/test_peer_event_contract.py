@@ -167,6 +167,30 @@ def main():
 		release.set()
 		defw_directory.apply_peer_event = original_apply_peer_event
 
+	# A late disconnect from an old directory connection must not clear the
+	# proxy installed for its replacement.
+	replacement_dirsvc = object()
+	defw.dirsvc = replacement_dirsvc
+	defw_workers.dirsvc_binding_runtime_id = "directory-new"
+	defw_workers.dirsvc_binding_peer_handle = "peer-new"
+	stale_directory_event = {
+		'event_type': 'PEER_LOST',
+		'peer_handle': 'peer-old',
+		'remote_runtime_id': 'directory-old',
+		'node_type': cdefw_agent.EN_DEFW_DIRSVC,
+	}
+	defw_workers.worker_thread.clear_dirsvc_peer(stale_directory_event)
+	expect(defw.dirsvc is replacement_dirsvc,
+	       "stale directory disconnect cleared the replacement proxy")
+	current_directory_event = dict(stale_directory_event)
+	current_directory_event.update({
+		'peer_handle': 'peer-new',
+		'remote_runtime_id': 'directory-new',
+	})
+	defw_workers.worker_thread.clear_dirsvc_peer(current_directory_event)
+	expect(defw.dirsvc is None,
+	       "current directory disconnect retained its proxy")
+
 
 if __name__ == "__main__":
 	main()

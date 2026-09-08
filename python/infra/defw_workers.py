@@ -27,6 +27,9 @@ peer_events = deque()
 peer_events_lock = threading.Lock()
 peer_event_listeners = []
 peer_event_listeners_lock = threading.Lock()
+dirsvc_binding_lock = threading.Lock()
+dirsvc_binding_runtime_id = None
+dirsvc_binding_peer_handle = None
 
 
 def add_peer_event_listener(listener):
@@ -61,7 +64,7 @@ def _notify_peer_event_listeners(event):
 def is_ready_dirsvc_peer(event, peer_record):
 	if event.get('event_type') != 'PEER_READY':
 		return False
-	if me.is_dirsvc() or getattr(defw, 'dirsvc', None):
+	if me.is_dirsvc():
 		return False
 	if not peer_record or not peer_record.get('callable', False):
 		return False
@@ -331,22 +334,42 @@ class WorkerThread:
 					peer_event=event))
 
 	def clear_dirsvc_peer(self, event):
+		global dirsvc_binding_runtime_id
+		global dirsvc_binding_peer_handle
+
 		if not is_disconnected_dirsvc_peer(event):
 			return
-		import defw_peers
-
-		if defw_peers.get_dirsvc_agent():
-			return
-		if not getattr(defw, 'dirsvc', None):
-			return
-		defw.dirsvc = None
+		runtime_id = event.get('remote_runtime_id') or ''
+		peer_handle = event.get('peer_handle') or ''
+		with dirsvc_binding_lock:
+			if (dirsvc_binding_runtime_id and runtime_id and
+					dirsvc_binding_runtime_id != runtime_id):
+				return
+			if (dirsvc_binding_peer_handle and peer_handle and
+					dirsvc_binding_peer_handle != peer_handle):
+				return
+			old_dirsvc = getattr(defw, 'dirsvc', None)
+			defw.dirsvc = None
+			dirsvc_binding_runtime_id = None
+			dirsvc_binding_peer_handle = None
+		del old_dirsvc
 		logging.defw_worker(
 			f"Cleared directory service API after {event.get('event_type')}")
 
 	def bind_dirsvc_peer(self, peer_record):
+		global dirsvc_binding_runtime_id
+		global dirsvc_binding_peer_handle
+
 		try:
-			if me.is_dirsvc() or getattr(defw, 'dirsvc', None):
+			if me.is_dirsvc():
 				return
+			runtime_id = peer_record.get('runtime_id') or ''
+			peer_handle = peer_record.get('peer_handle') or ''
+			with dirsvc_binding_lock:
+				if (getattr(defw, 'dirsvc', None) and
+						dirsvc_binding_runtime_id == runtime_id and
+						dirsvc_binding_peer_handle == peer_handle):
+					return
 			if 'Directory Service' not in service_apis:
 				raise DEFwNotFound("Directory service API not loaded")
 			if not dirsvc_peer_still_ready(peer_record):
@@ -364,7 +387,12 @@ class WorkerThread:
 				logging.defw_worker(
 					"Discarding directory service API for stale peer")
 				return
-			defw.dirsvc = dirsvc
+			with dirsvc_binding_lock:
+				old_dirsvc = getattr(defw, 'dirsvc', None)
+				defw.dirsvc = dirsvc
+				dirsvc_binding_runtime_id = runtime_id
+				dirsvc_binding_peer_handle = peer_handle
+			del old_dirsvc
 			logging.defw_worker(
 				f"Created directory service API: {defw.dirsvc}")
 		except Exception as e:
