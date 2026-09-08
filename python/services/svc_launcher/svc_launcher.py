@@ -73,14 +73,16 @@ class Process:
 		return self.__pid
 
 class Launcher:
-	def __init__(self, start=False):
+	def __init__(self, start=True):
 		self.__proc_dict = {}
 		self.__dead_procs = {}
-		self.__shutdown = False
+		self.__shutdown = not start
 		self.__lock_db = threading.Lock()
-		self.__monitor_thr = threading.Thread(target=self.monitor_thr)
-		self.__monitor_thr.daemon = True
-		self.__monitor_thr.start()
+		self.__monitor_thr = None
+		if start:
+			self.__monitor_thr = threading.Thread(target=self.monitor_thr)
+			self.__monitor_thr.daemon = True
+			self.__monitor_thr.start()
 
 	def monitor_thr(self):
 		while not self.__shutdown:
